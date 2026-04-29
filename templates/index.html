@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Model Assessment Operator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="layout">
+        <!-- Sidebar Configuration -->
+        <aside class="sidebar" id="sidebar">
+            <h2>⚙️ Operator Setup</h2>
+            <form id="evalForm">
+                <div class="form-group">
+                    <label>Tag (Topic):</label>
+                    <input type="text" id="tag" value="python_test" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Judge Model:</label>
+                    <select id="judgeModel" required></select>
+                </div>
+
+                <div class="form-group">
+                    <label>Candidates:</label>
+                    <div id="candidatesList" class="checkbox-group">
+                        <!-- Checkboxes injected via JS -->
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Questions / Prompts:</label>
+                    <div id="questionsList">
+                        <textarea class="question-input" rows="3" required>Write a python function to add two numbers.</textarea>
+                    </div>
+                    <button type="button" id="addQuestionBtn" style="margin-top: 5px; background: #333; font-weight: normal;">+ Add Question</button>
+                </div>
+
+                <div class="form-group">
+                    <label>Base Rationale:</label>
+                    <textarea id="baseRationale" rows="3" required>Score from 1 to 100. 1 is hallucination, 100 is perfect.</textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Specific Rationale:</label>
+                    <textarea id="specificRationale" rows="3">Must contain working python code.</textarea>
+                </div>
+
+                <button type="submit" id="runBtn">🚀 Run Evaluation</button>
+            </form>
+        </aside>
+
+        <!-- Sidebar Toggle Button -->
+        <button id="toggleSidebarBtn" class="toggle-sidebar-btn" title="Toggle Sidebar">◀</button>
+
+        <!-- Main Content -->
+        <main class="dashboard">
+            <header class="dashboard-header">
+                <h1>Local Model Assessment Dashboard</h1>
+            </header>
+
+            <section id="resultsContainer" class="results-grid">
+                <div class="welcome-msg">Select models, add questions, and press "Run Evaluation" to start.</div>
+            </section>
+            
+            <!-- Central Progress Overlay -->
+            <div id="progressOverlay" class="progress-overlay hidden">
+                <div class="progress-modal">
+                    <h2>⚙️ Processing Task...</h2>
+                    <ul id="logList" class="log-list">
+                        <!-- Logs will be injected here via JS -->
+                    </ul>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

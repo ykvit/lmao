@@ -3,77 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Model Assessment Operator</title>
+    <title>Operator | Model Assessment</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
     <div class="layout">
-        <!-- Sidebar Configuration -->
-        <aside class="sidebar" id="sidebar">
-            <h2>⚙️ Operator Setup</h2>
+        
+        <!-- PANEL 1: SETUP (Left Sidebar) -->
+        <aside class="sidebar left-sidebar" id="setupSidebar">
+            <h2>Operator Setup</h2>
             <form id="evalForm">
-                <div class="form-group">
-                    <label>Tag (Topic):</label>
-                    <input type="text" id="tag" value="python_test" required>
-                </div>
+                
+                <div class="section-block">
+                    <h3>Global Settings</h3>
+                    <div class="form-group">
+                        <label>Judge Model:</label>
+                        <select id="judgeModel" required></select>
+                    </div>
 
-                <div class="form-group">
-                    <label>Judge Model:</label>
-                    <select id="judgeModel" required></select>
-                </div>
+                    <div class="form-group">
+                        <label>Candidates:</label>
+                        <div id="candidatesList" class="checkbox-group">
+                            <!-- Checkboxes injected via JavaScript -->
+                        </div>
+                    </div>
 
-                <div class="form-group">
-                    <label>Candidates:</label>
-                    <div id="candidatesList" class="checkbox-group">
-                        <!-- Checkboxes injected via JS -->
+                    <div class="form-group">
+                        <label>Base Prompt (Rationale for Judge):</label>
+                        <textarea id="baseRationale" rows="2" required>Score from 1 to 100. Be objective and strict. 1 is hallucination, 100 is perfect.</textarea>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>Questions / Prompts:</label>
-                    <div id="questionsList">
-                        <textarea class="question-input" rows="3" required>Write a python function to add two numbers.</textarea>
+                <div class="section-block" id="testCasesWrapper">
+                    <h3>Test Generation</h3>
+                    
+                    <div id="testCasesContainer">
+                        <!-- Individual Test Case Block -->
+                        <div class="test-case-block">
+                            <div class="test-case-header">Test Case 1</div>
+                            <div class="form-group">
+                                <input type="text" class="tc-tag" placeholder="Tag (e.g., Python Code)" value="python_test" required>
+                            </div>
+                            <div class="form-group">
+                                <textarea class="tc-question" rows="2" placeholder="Question / Prompt" required>Write a python function to add two numbers.</textarea>
+                            </div>
+                            <div class="form-group">
+                                <textarea class="tc-specific" rows="2" placeholder="Specific Prompt / Rationale (Optional)">Must contain working python code.</textarea>
+                            </div>
+                        </div>
                     </div>
-                    <button type="button" id="addQuestionBtn" style="margin-top: 5px; background: #333; font-weight: normal;">+ Add Question</button>
+
+                    <button type="button" id="addTestCaseBtn" class="secondary-btn">+ Add Another Test</button>
                 </div>
 
-                <div class="form-group">
-                    <label>Base Rationale:</label>
-                    <textarea id="baseRationale" rows="3" required>Score from 1 to 100. 1 is hallucination, 100 is perfect.</textarea>
-                </div>
-
-                <div class="form-group">
-                    <label>Specific Rationale:</label>
-                    <textarea id="specificRationale" rows="3">Must contain working python code.</textarea>
-                </div>
-
-                <button type="submit" id="runBtn">🚀 Run Evaluation</button>
+                <button type="submit" id="runBtn" class="primary-btn">🚀 Run Evaluation</button>
             </form>
         </aside>
 
-        <!-- Sidebar Toggle Button -->
-        <button id="toggleSidebarBtn" class="toggle-sidebar-btn" title="Toggle Sidebar">◀</button>
-
-        <!-- Main Content -->
+        <!-- PANEL 2: MAIN DASHBOARD (Center Panel) -->
         <main class="dashboard">
             <header class="dashboard-header">
-                <h1>Local Model Assessment Dashboard</h1>
+                <div class="header-left">
+                    <button id="toggleSetupBtn" class="icon-btn" title="Toggle Setup Panel">Setup</button>
+                    <h1>Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <button id="toggleHistoryBtn" class="icon-btn" title="Toggle History Panel">Archive</button>
+                </div>
             </header>
 
             <section id="resultsContainer" class="results-grid">
-                <div class="welcome-msg">Select models, add questions, and press "Run Evaluation" to start.</div>
+                <div class="welcome-msg">Select models, add test cases, and press "Run Evaluation" to start.</div>
             </section>
             
-            <!-- Central Progress Overlay -->
+            <!-- Central Progress Overlay (Hidden by default) -->
             <div id="progressOverlay" class="progress-overlay hidden">
                 <div class="progress-modal">
                     <h2>⚙️ Processing Task...</h2>
                     <ul id="logList" class="log-list">
-                        <!-- Logs will be injected here via JS -->
+                        <!-- SSE Real-time logs will be injected here via JavaScript -->
                     </ul>
                 </div>
             </div>
         </main>
+
+        <!-- PANEL 3: ARCHIVE/HISTORY (Right Sidebar) -->
+        <aside class="sidebar right-sidebar collapsed" id="historySidebar">
+            <h2>Archive</h2>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top:0;">Past evaluations history</p>
+            <div id="historyList" class="history-list">
+                <!-- History items injected via JavaScript -->
+            </div>
+        </aside>
+
     </div>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>

@@ -2,7 +2,8 @@
 
 This module contains the logic for orchestrating the evaluation of LLMs.
 It sequentially prompts candidates, collects metrics, cleans outputs, 
-and invokes a judge LLM to score the results.
+and invokes a judge LLM to score the results. It includes resilience 
+mechanisms like retries and robust JSON extraction.
 """
 
 import os
@@ -41,6 +42,34 @@ class EvaluationPipeline:
         """
         cleaned_text = re.sub(r'<think>.*?</think>\n*', '', text, flags=re.DOTALL)
         return cleaned_text.strip()
+
+    def _extract_json(self, text: str) -> str:
+        """Extracts JSON from a string that might contain markdown formatting.
+
+        LLMs often wrap JSON output in markdown blocks (e.g., ```json ... ```)
+        despite being instructed to return raw JSON. This method strips those
+        blocks to ensure the parser doesn't fail.
+
+        Args:
+            text (str): The raw output from the judge model.
+
+        Returns:
+            str: The extracted JSON string, or the original text if no JSON 
+                 structure is detected.
+        """
+        text = text.strip()
+        # Remove markdown code blocks if present
+        match = re.search(r'```(?:json)?(.*?)```', text, re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+        
+        # Locate the first '{' and the last '}' to handle leading/trailing text
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1 and end >= start:
+            return text[start:end+1]
+            
+        return text
 
     def run_evaluation(self, task_id: str, payload: dict, update_status_cb: callable) -> None:
         """Executes the full evaluation process for a given payload.
@@ -118,37 +147,68 @@ class EvaluationPipeline:
             with open(os.path.join(run_folder, "technical_metrics.json"), "w", encoding="utf-8") as f:
                 json.dump(technical_metrics, f, ensure_ascii=False, indent=2)
 
-            # 2. Judge Evaluation Phase
+            # 2. Judge Evaluation Phase with Retry Policy
             update_status_cb(task_id, {"type": "judge_start", "case": q_num, "model": judge_model})
             judge_prompt = self._build_judge_prompt(question, base_rationale, specific_rationale, candidates_answers)
             
-            judge_result = self.ollama.generate(
-                model=judge_model, prompt=judge_prompt, 
-                system_prompt="You are an objective AI judge. You MUST return ONLY a valid JSON object.",
-                format_json=True
-            )
+            max_retries = 3
+            parsed_judge = None
+            judge_error_msg = "Unknown error."
+
+            for attempt in range(max_retries):
+                sys_prompt = "You are an objective AI judge. You MUST return ONLY a valid JSON object."
+                if attempt > 0:
+                    # Append strict instructions if the previous attempt failed JSON validation.
+                    sys_prompt += " WARNING: Your previous response was invalid. You must output raw JSON starting with '{' without markdown blocks."
+
+                judge_result = self.ollama.generate(
+                    model=judge_model, prompt=judge_prompt, 
+                    system_prompt=sys_prompt,
+                    format_json=True
+                )
+
+                if judge_result["success"]:
+                    try:
+                        cleaned_json_text = self._extract_json(judge_result["response_text"])
+                        parsed_judge = json.loads(cleaned_json_text)
+                        
+                        # Validate the core structure to ensure it's not arbitrary JSON.
+                        if "evaluations" in parsed_judge:
+                            break  # Success, exit retry loop
+                        else:
+                            judge_error_msg = "JSON missing 'evaluations' array."
+                            parsed_judge = None
+                    except json.JSONDecodeError as e:
+                        judge_error_msg = f"Invalid JSON format. {str(e)}"
+                else:
+                    judge_error_msg = judge_result.get("error", "Failed to call judge model.")
 
             q_result = {"tag": tag, "question": question, "specific_rationale": specific_rationale, "results":[]}
 
-            if judge_result["success"]:
+            if parsed_judge and "evaluations" in parsed_judge:
                 update_status_cb(task_id, {"type": "judge_done", "case": q_num, "model": judge_model, "success": True})
-                try:
-                    parsed_judge = json.loads(judge_result["response_text"])
-                    for candidate in candidates_answers:
-                        model_name = candidate["model_name"]
-                        # Match the judge's score object to the correct candidate.
-                        judge_eval = next((item for item in parsed_judge.get("evaluations",[]) if item.get("model_name") == model_name), None)
-                        q_result["results"].append({
-                            "model_name": model_name,
-                            "clean_answer": candidate["answer"],
-                            "raw_answer": candidate["raw_answer"],
-                            "judge_evaluation": judge_eval if judge_eval else {"score": 0, "comment": "Judge did not provide an evaluation."}
-                        })
-                except json.JSONDecodeError:
-                    q_result["results"] = [{"error": "Judge returned invalid JSON format."}]
+                for candidate in candidates_answers:
+                    model_name = candidate["model_name"]
+                    # Match the judge's score object to the correct candidate.
+                    judge_eval = next((item for item in parsed_judge.get("evaluations",[]) if item.get("model_name") == model_name), None)
+                    q_result["results"].append({
+                        "model_name": model_name,
+                        "clean_answer": candidate["answer"],
+                        "raw_answer": candidate["raw_answer"],
+                        "judge_evaluation": judge_eval if judge_eval else {"score": 0, "comment": "Judge omitted this model."}
+                    })
             else:
-                update_status_cb(task_id, {"type": "judge_done", "case": q_num, "model": judge_model, "success": False, "error": "Failed to call judge."})
-                q_result["results"] = [{"error": "Failed to call the judge model."}]
+                update_status_cb(task_id, {"type": "judge_done", "case": q_num, "model": judge_model, "success": False, "error": judge_error_msg})
+                # CRITICAL: Assign the error explicitly to EACH model so the UI does not mask the failure.
+                for candidate in candidates_answers:
+                    model_name = candidate["model_name"]
+                    q_result["results"].append({
+                        "model_name": model_name,
+                        "clean_answer": candidate.get("answer", "No answer."),
+                        "raw_answer": candidate.get("raw_answer", ""),
+                        "error": judge_error_msg,
+                        "judge_evaluation": {"score": 0, "comment": "SYSTEM ERROR"}
+                    })
 
             evaluation_data["questions_results"].append(q_result)
 
@@ -174,7 +234,7 @@ class EvaluationPipeline:
         if summary_result["success"]:
             evaluation_data["final_summary"] = summary_result["response_text"]
         else:
-            evaluation_data["final_summary"] = "Failed to generate summary."
+            evaluation_data["final_summary"] = f"Failed to generate summary: {summary_result.get('error', 'Unknown error')}"
             
         update_status_cb(task_id, {"type": "summary_done"})
 

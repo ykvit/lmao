@@ -150,7 +150,7 @@ function monitorSSE(taskId) {
                 step.classList.remove('active');
                 if (data.success) {
                     step.classList.add('success');
-                    step.innerHTML = `✅ Model <b>${data.model}</b> is generating...`;
+                    step.innerHTML = `✅ Model <b>${data.model}</b> generated.`;
                 } else {
                     step.classList.add('error');
                     step.innerHTML = `❌ Model <b>${data.model}</b> error: ${data.error}`;
@@ -173,7 +173,7 @@ function monitorSSE(taskId) {
                 step.classList.remove('active');
                 if (data.success) {
                     step.classList.add('success');
-                    step.innerHTML = `✅ Judge <b>${data.model}</b> is analyzing...`;
+                    step.innerHTML = `✅ Judge <b>${data.model}</b> finished analyzing.`;
                 } else {
                     step.classList.add('error');
                     step.innerHTML = `❌ Judge <b>${data.model}</b> failed.`;
@@ -192,7 +192,7 @@ function monitorSSE(taskId) {
             if (step) {
                 step.classList.remove('active');
                 step.classList.add('success');
-                step.innerHTML = `✅ Generating final summary...`;
+                step.innerHTML = `✅ Final summary generated.`;
             }
         }
         else if (data.type === 'completed' || data.type === 'error') {
@@ -254,22 +254,37 @@ async function fetchAndRenderResults(taskId) {
                 let validEvals = 0;
                 
                 modelData.evaluations.forEach((eval, idx) => {
-                    const score = eval.judge_evaluation.score || 0;
-                    const comment = eval.judge_evaluation.comment || "No comment provided.";
-                    totalScore += score;
-                    validEvals++;
-                    let sClass = score >= 80 ? "good" : (score >= 50 ? "average" : "bad");
-                    evalsHtml += `
-                        <div class="eval-block">
-                            <div class="eval-tag">${escapeHtml(eval.tag)}</div>
-                            <div class="eval-question">Q${idx+1}: ${escapeHtml(eval.question)}</div>
-                            <div class="score ${sClass}" style="font-size: 1.1rem; margin-bottom: 5px;">Score: ${score}/100</div>
-                            <div class="comment">"${escapeHtml(comment)}"</div>
-                            <pre><code>${escapeHtml(eval.clean_answer)}</code></pre>
-                        </div>
-                    `;
+                    // FAIL LOUD: Catch errors gracefully and render an aggressive visual indicator
+                    // rather than masking them as a 0 score without explanation.
+                    if (eval.error) {
+                        evalsHtml += `
+                            <div class="eval-block" style="border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.05);">
+                                <div class="eval-tag" style="background: #ef4444; color: white;">${escapeHtml(eval.tag)}</div>
+                                <div class="eval-question">Q${idx+1}: ${escapeHtml(eval.question)}</div>
+                                <div style="color: #ef4444; font-weight: bold; font-size: 1.1rem; margin-bottom: 5px;">⚠️ EVALUATION FAILED</div>
+                                <div class="comment" style="color: #ef4444;">Error details: ${escapeHtml(eval.error)}</div>
+                                <pre><code>${escapeHtml(eval.clean_answer)}</code></pre>
+                            </div>
+                        `;
+                    } else {
+                        const score = eval.judge_evaluation.score || 0;
+                        const comment = eval.judge_evaluation.comment || "No comment provided.";
+                        totalScore += score;
+                        validEvals++;
+                        let sClass = score >= 80 ? "good" : (score >= 50 ? "average" : "bad");
+                        evalsHtml += `
+                            <div class="eval-block">
+                                <div class="eval-tag">${escapeHtml(eval.tag)}</div>
+                                <div class="eval-question">Q${idx+1}: ${escapeHtml(eval.question)}</div>
+                                <div class="score ${sClass}" style="font-size: 1.1rem; margin-bottom: 5px;">Score: ${score}/100</div>
+                                <div class="comment">"${escapeHtml(comment)}"</div>
+                                <pre><code>${escapeHtml(eval.clean_answer)}</code></pre>
+                            </div>
+                        `;
+                    }
                 });
-                const avgScore = validEvals > 0 ? Math.round(totalScore / validEvals) : 0;
+                
+                const avgScore = validEvals > 0 ? Math.round(totalScore / validEvals) : "N/A";
 
                 const card = document.createElement('div');
                 card.className = 'card';
@@ -285,7 +300,7 @@ async function fetchAndRenderResults(taskId) {
         });
     } catch (err) {
         console.error("Failed to fetch results:", err);
-        document.getElementById('resultsContainer').innerHTML = '<div class="welcome-msg" style="color:red;">Error rendering UI.</div>';
+        document.getElementById('resultsContainer').innerHTML = '<div class="welcome-msg" style="color:#ef4444;">Error rendering UI.</div>';
     }
 }
 

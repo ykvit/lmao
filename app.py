@@ -179,7 +179,8 @@ def get_results(task_id: str):
     """Fetches and formats the results of a specific task for frontend rendering.
 
     Groups the questions and judge scores by the candidate model name, making it 
-    easier for the UI to build per-model comparison cards.
+    easier for the UI to build per-model comparison cards. Explicitly propagates
+    errors if the judge evaluation failed.
 
     Args:
         task_id (str): The unique identifier of the completed task.
@@ -214,13 +215,15 @@ def get_results(task_id: str):
                 merged_models[m_name] = {
                     "model_name": m_name,
                     "metrics": metrics_data.get("metrics", {}).get(m_name, {}),
-                    "evaluations": []
+                    "evaluations":[]
                 }
                 
+            # Explicitly append the error field if it exists to notify the UI
             merged_models[m_name]["evaluations"].append({
                 "tag": tag,
                 "question": question_text,
                 "clean_answer": res.get("clean_answer", "Error/Empty"),
+                "error": res.get("error"),
                 "judge_evaluation": res.get("judge_evaluation", {"score": 0, "comment": "No evaluation provided."})
             })
             

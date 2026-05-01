@@ -277,3 +277,44 @@ pre {
 .log-step b {
     color: inherit;
 }
+
+/* ==========================================================================
+   Comparison Table Styles (Added for Observability Matrix)
+   ========================================================================== */
+.comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.95rem;
+    text-align: center;
+}
+
+.comparison-table th {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-weight: normal;
+    padding: 12px 10px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.comparison-table th:first-child {
+    text-align: left;
+}
+
+.comparison-table td {
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.comparison-table td:first-child {
+    text-align: left;
+}
+
+.comparison-table tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+.comparison-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+}

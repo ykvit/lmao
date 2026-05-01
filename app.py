@@ -141,6 +141,9 @@ def stream_status(task_id: str):
 def get_history():
     """Retrieves a list of all past evaluations stored on disk.
 
+    Parses the directory names and evaluation_results.json to extract
+    rich metadata including readable timestamps, judge name, and counts.
+
     Returns:
         Response: A JSON list of historical run metadata, sorted by newest first.
     """
@@ -157,17 +160,39 @@ def get_history():
                 try:
                     with open(results_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        # Extract a readable timestamp from the folder name.
+                        
+                        # Parse task_id format: run_{tag}_{YYYYMMDD}_{HHMMSS}
                         parts = task_id.split('_')
-                        timestamp = f"{parts[-2]} {parts[-1]}" if len(parts) >= 2 else "Unknown"
+                        if len(parts) >= 4:
+                            tag_name = "_".join(parts[1:-2]).replace("_", " ").title()
+                            date_str = parts[-2]
+                            time_str = parts[-1]
+                            try:
+                                dt = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
+                                timestamp = dt.strftime("%Y-%m-%d %H:%M")
+                            except ValueError:
+                                timestamp = f"{date_str} {time_str}"
+                        else:
+                            tag_name = task_id
+                            timestamp = "Unknown"
+                        
+                        # Extract counts and judge
+                        questions = data.get("questions_results",[])
+                        q_count = len(questions)
+                        # Find max models tested across questions
+                        models_count = len(questions[0].get("results",[])) if q_count > 0 else 0
+                        judge_model = data.get("judge_model", "Unknown Judge")
                         
                         runs.append({
                             "task_id": task_id,
+                            "tag_name": tag_name,
                             "timestamp": timestamp,
-                            "models_tested": len(data.get("questions_results", [{}])[0].get("results",[]))
+                            "models_tested": models_count,
+                            "questions_count": q_count,
+                            "judge_model": judge_model
                         })
                 except Exception:
-                    pass # Silently skip corrupted or incomplete history directories.
+                    pass # Silently skip corrupted directories
     
     # Sort by task_id descending (newest first).
     runs.sort(key=lambda x: x["task_id"], reverse=True)

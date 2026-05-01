@@ -1,0 +1,28 @@
+# Git
+.git
+.gitignore
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environments
+env/
+venv/
+
+# Secrets
+.env
+
+# Application State & Logs
+history/
+*.log
+
+# Testing
+.pytest_cache/

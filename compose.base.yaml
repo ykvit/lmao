@@ -1,0 +1,37 @@
+services:
+  app:
+    restart: unless-stopped
+    networks:
+      - lmao_network
+    volumes:
+      - history_data:/app/history
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    networks:
+      - lmao_network
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "ps"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  lmao_network:
+    driver: bridge
+
+volumes:
+  ollama_data:
+    external: true
+    name: ollama
+  history_data:
+    driver: local

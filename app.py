@@ -259,6 +259,17 @@ def get_results(task_id: str):
     }), 200
 
 
+
+@app.route('/health')
+def health_check():
+  """Checks the health status of the service.
+
+  Returns:
+      A tuple containing a dictionary with the status and an HTTP 200 code.
+  """
+  return {'status': 'ok'}, 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("FLASK_PORT", 5000))
     debug = os.environ.get("FLASK_DEBUG", "True").lower() in ("true", "1", "yes")

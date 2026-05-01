@@ -300,11 +300,11 @@ async function fetchAndRenderResults(taskId) {
                 let validEvals = 0;
                 let qScoresHtml = "";
 
-                modelData.evaluations.forEach(eval => {
-                    if (eval.error) {
-                        qScoresHtml += `<td style="color: #ef4444; font-weight: bold;" title="${escapeHtml(eval.error)}">Err</td>`;
+                modelData.evaluations.forEach(evaluationItem => {
+                    if (evaluationItem.error) {
+                        qScoresHtml += `<td style="color: #ef4444; font-weight: bold;" title="${escapeHtml(evaluationItem.error)}">Err</td>`;
                     } else {
-                        const score = eval.judge_evaluation.score || 0;
+                        const score = evaluationItem.judge_evaluation.score || 0;
                         totalScore += score;
                         validEvals++;
                         let color = score >= 80 ? 'var(--accent-color)' : (score >= 50 ? '#f59e0b' : '#ef4444');
@@ -338,35 +338,35 @@ async function fetchAndRenderResults(taskId) {
                 let totalScore = 0;
                 let validEvals = 0;
                 
-                modelData.evaluations.forEach((eval, idx) => {
-                    if (eval.error) {
+                modelData.evaluations.forEach((evaluationItem, idx) => {
+                    if (evaluationItem.error) {
                         evalsHtml += `
                             <div class="eval-block" style="border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.05);">
-                                <div class="eval-tag" style="background: #ef4444; color: white;">${escapeHtml(eval.tag)}</div>
-                                <div class="eval-question">Q${idx+1}: ${escapeHtml(eval.question)}</div>
+                                <div class="eval-tag" style="background: #ef4444; color: white;">${escapeHtml(evaluationItem.tag)}</div>
+                                <div class="eval-question">Q${idx+1}: ${escapeHtml(evaluationItem.question)}</div>
                                 <div style="color: #ef4444; font-weight: bold; font-size: 1.1rem; margin-bottom: 5px;">⚠️ EVALUATION FAILED</div>
-                                <div class="comment" style="color: #ef4444;">Error details: ${escapeHtml(eval.error)}</div>
-                                <pre><code>${escapeHtml(eval.clean_answer)}</code></pre>
+                                <div class="comment" style="color: #ef4444;">Error details: ${escapeHtml(evaluationItem.error)}</div>
+                                <pre><code>${escapeHtml(evaluationItem.clean_answer)}</code></pre>
                             </div>
                         `;
                     } else {
-                        const score = eval.judge_evaluation.score || 0;
-                        const comment = eval.judge_evaluation.comment || "No comment provided.";
+                        const score = evaluationItem.judge_evaluation.score || 0;
+                        const comment = evaluationItem.judge_evaluation.comment || "No comment provided.";
                         totalScore += score;
                         validEvals++;
                         let sClass = score >= 80 ? "good" : (score >= 50 ? "average" : "bad");
                         evalsHtml += `
                             <div class="eval-block">
-                                <div class="eval-tag">${escapeHtml(eval.tag)}</div>
-                                <div class="eval-question">Q${idx+1}: ${escapeHtml(eval.question)}</div>
+                                <div class="eval-tag">${escapeHtml(evaluationItem.tag)}</div>
+                                <div class="eval-question">Q${idx+1}: ${escapeHtml(evaluationItem.question)}</div>
                                 <div class="score ${sClass}" style="font-size: 1.1rem; margin-bottom: 5px;">Score: ${score}/100</div>
                                 <div class="comment">"${escapeHtml(comment)}"</div>
-                                <pre><code>${escapeHtml(eval.clean_answer)}</code></pre>
+                                <pre><code>${escapeHtml(evaluationItem.clean_answer)}</code></pre>
                             </div>
                         `;
                     }
                 });
-                
+
                 const avgScore = validEvals > 0 ? Math.round(totalScore / validEvals) : "N/A";
 
                 const card = document.createElement('div');

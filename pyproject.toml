@@ -1,0 +1,24 @@
+[tool.ruff]
+# Set the maximum line length to 88 (Black's default)
+line-length = 88
+# Target Python 3.14 (matching your Dockerfile)
+target-version = "py314"
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`), pycodestyle (`E`, `W`), and isort (`I`)
+select =["E", "F", "W", "I"]
+# Ignore lines that are too long (let the formatter handle what it can)
+ignore = ["E501"]
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]

@@ -72,7 +72,6 @@ clean: ##> Deep clean: remove volumes, build cache, and __pycache__.
 	@echo "Deep Cleaning"
 	$(CMD_DOWN) down -v --remove-orphans
 	-docker builder prune -af
-	-docker volume rm $(VOL_OLLAMA)
 	-find . -type d -name "__pycache__" -exec rm -r {} +
 	-find . -type d -name ".pytest_cache" -exec rm -r {} +
 	-find . -type d -name ".ruff_cache" -exec rm -r {} +

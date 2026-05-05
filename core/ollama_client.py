@@ -5,8 +5,9 @@ handling model discovery and generation requests while ensuring
 memory management practices (like forcing VRAM unload).
 """
 
-import requests
 import os
+
+import requests
 
 
 class OllamaClient:
@@ -29,17 +30,23 @@ class OllamaClient:
         try:
             response = requests.get(f"{self.base_url}/api/tags", timeout=5)
             response.raise_for_status()
-            models = [model["name"] for model in response.json().get("models",[])]
+            models = [model["name"] for model in response.json().get("models", [])]
             return models
         except Exception as e:
             print(f"Error fetching models: {e}")
-            return[]
+            return []
 
-    def generate(self, model: str, prompt: str, system_prompt: str = "", format_json: bool = False) -> dict:
+    def generate(
+        self,
+        model: str,
+        prompt: str,
+        system_prompt: str = "",
+        format_json: bool = False,
+    ) -> dict:
         """Generates a text response from a specific model.
 
-        Critically, this function uses `keep_alive: 0` to force Ollama to unload 
-        the model from VRAM immediately after generation. This prevents memory 
+        Critically, this function uses `keep_alive: 0` to force Ollama to unload
+        the model from VRAM immediately after generation. This prevents memory
         exhaustion when sequentially testing multiple large models.
 
         Args:
@@ -57,9 +64,9 @@ class OllamaClient:
             "prompt": prompt,
             "system": system_prompt,
             "stream": False,
-            "keep_alive": 0  # CRITICAL FOR CLEARING VRAM BETWEEN MODELS
+            "keep_alive": 0,  # CRITICAL FOR CLEARING VRAM BETWEEN MODELS
         }
-        
+
         if format_json:
             payload["format"] = "json"
 
@@ -73,7 +80,9 @@ class OllamaClient:
             eval_duration_sec = data.get("eval_duration", 0) / ns_to_sec
             eval_count = data.get("eval_count", 0)
 
-            tokens_per_second = (eval_count / eval_duration_sec) if eval_duration_sec > 0 else 0
+            tokens_per_second = (
+                (eval_count / eval_duration_sec) if eval_duration_sec > 0 else 0
+            )
 
             return {
                 "success": True,
@@ -82,8 +91,8 @@ class OllamaClient:
                     "total_time_sec": round(total_duration_sec, 2),
                     "eval_time_sec": round(eval_duration_sec, 2),
                     "tokens_generated": eval_count,
-                    "tokens_per_second": round(tokens_per_second, 2)
-                }
+                    "tokens_per_second": round(tokens_per_second, 2),
+                },
             }
         except Exception as e:
             return {"success": False, "error": str(e)}

@@ -1,14 +1,15 @@
 """Evaluation Pipeline module.
 
 This module contains the logic for orchestrating the evaluation of LLMs.
-It sequentially prompts candidates, collects metrics, cleans outputs, 
-and invokes a judge LLM to score the results.
+It sequentially prompts candidates, collects metrics, cleans outputs,
+and invokes a judge LLM to score the results. It includes resilience
+mechanisms like retries and robust JSON extraction.
 """
 
-import os
 import json
+import os
 import re
-from datetime import datetime
+
 from .ollama_client import OllamaClient
 
 
@@ -39,10 +40,40 @@ class EvaluationPipeline:
         Returns:
             str: The cleaned text without reasoning blocks.
         """
-        cleaned_text = re.sub(r'<think>.*?</think>\n*', '', text, flags=re.DOTALL)
+        cleaned_text = re.sub(r"<think>.*?</think>\n*", "", text, flags=re.DOTALL)
         return cleaned_text.strip()
 
-    def run_evaluation(self, task_id: str, payload: dict, update_status_cb: callable) -> None:
+    def _extract_json(self, text: str) -> str:
+        """Extracts JSON from a string that might contain markdown formatting.
+
+        LLMs often wrap JSON output in markdown blocks (e.g., ```json ... ```)
+        despite being instructed to return raw JSON. This method strips those
+        blocks to ensure the parser doesn't fail.
+
+        Args:
+            text (str): The raw output from the judge model.
+
+        Returns:
+            str: The extracted JSON string, or the original text if no JSON
+                 structure is detected.
+        """
+        text = text.strip()
+        # Remove markdown code blocks if present
+        match = re.search(r"```(?:json)?(.*?)```", text, re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+
+        # Locate the first '{' and the last '}' to handle leading/trailing text
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end >= start:
+            return text[start : end + 1]
+
+        return text
+
+    def run_evaluation(
+        self, task_id: str, payload: dict, update_status_cb: callable
+    ) -> None:
         """Executes the full evaluation process for a given payload.
 
         Generates responses from candidate models, scores them using the judge model,
@@ -54,10 +85,10 @@ class EvaluationPipeline:
             payload (dict): Configuration data from the UI (candidates, judge, test_cases).
             update_status_cb (callable): Function to push state updates to the app stream.
         """
-        candidates = payload.get("candidates",[])
+        candidates = payload.get("candidates", [])
         judge_model = payload.get("judge")
         base_rationale = payload.get("base_rationale", "")
-        test_cases = payload.get("test_cases",[])
+        test_cases = payload.get("test_cases", [])
 
         run_folder = os.path.join(self.history_dir, f"{task_id}")
         os.makedirs(run_folder, exist_ok=True)
@@ -65,127 +96,269 @@ class EvaluationPipeline:
         technical_metrics = {"task_id": task_id, "metrics": {}}
         for model in candidates:
             technical_metrics["metrics"][model] = {
-                "total_time_sec": 0, "eval_time_sec": 0, "tokens_generated": 0, "tokens_per_second": 0
+                "total_time_sec": 0,
+                "eval_time_sec": 0,
+                "tokens_generated": 0,
+                "tokens_per_second": 0,
             }
 
         evaluation_data = {
-            "task_id": task_id, "judge_model": judge_model, "questions_results":[]
+            "task_id": task_id,
+            "judge_model": judge_model,
+            "questions_results": [],
         }
 
         total_q = len(test_cases)
-        update_status_cb(task_id, {"type": "info", "message": "Starting evaluation process..."})
+        update_status_cb(
+            task_id, {"type": "info", "message": "Starting evaluation process..."}
+        )
 
         for q_idx, test_case in enumerate(test_cases):
             q_num = q_idx + 1
             question = test_case.get("question", "")
             tag = test_case.get("tag", f"Q{q_num}")
             specific_rationale = test_case.get("specific_rationale", "")
-            
+
             # Announce the start of a new test case block.
-            update_status_cb(task_id, {"type": "case_start", "case": q_num, "total": total_q, "tag": tag})
-            
-            candidates_answers =[]
+            update_status_cb(
+                task_id,
+                {"type": "case_start", "case": q_num, "total": total_q, "tag": tag},
+            )
+
+            candidates_answers = []
 
             # 1. Candidate Generation Phase
             for c_idx, model in enumerate(candidates, 1):
-                update_status_cb(task_id, {"type": "model_start", "case": q_num, "model": model})
-                
+                update_status_cb(
+                    task_id, {"type": "model_start", "case": q_num, "model": model}
+                )
+
                 result = self.ollama.generate(model, prompt=question)
-                
+
                 if result["success"]:
                     clean_response = self._remove_think_tags(result["response_text"])
-                    candidates_answers.append({
-                        "model_name": model, 
-                        "answer": clean_response, 
-                        "raw_answer": result["response_text"]
-                    })
-                    
+                    candidates_answers.append(
+                        {
+                            "model_name": model,
+                            "answer": clean_response,
+                            "raw_answer": result["response_text"],
+                        }
+                    )
+
                     # Accumulate technical metrics.
                     m = technical_metrics["metrics"][model]
                     rm = result["metrics"]
-                    m["total_time_sec"] = round(m["total_time_sec"] + rm["total_time_sec"], 2)
-                    m["eval_time_sec"] = round(m["eval_time_sec"] + rm["eval_time_sec"], 2)
+                    m["total_time_sec"] = round(
+                        m["total_time_sec"] + rm["total_time_sec"], 2
+                    )
+                    m["eval_time_sec"] = round(
+                        m["eval_time_sec"] + rm["eval_time_sec"], 2
+                    )
                     m["tokens_generated"] += rm["tokens_generated"]
                     if m["eval_time_sec"] > 0:
-                        m["tokens_per_second"] = round(m["tokens_generated"] / m["eval_time_sec"], 2)
-                        
-                    update_status_cb(task_id, {"type": "model_done", "case": q_num, "model": model, "success": True})
+                        m["tokens_per_second"] = round(
+                            m["tokens_generated"] / m["eval_time_sec"], 2
+                        )
+
+                    update_status_cb(
+                        task_id,
+                        {
+                            "type": "model_done",
+                            "case": q_num,
+                            "model": model,
+                            "success": True,
+                        },
+                    )
                 else:
-                    candidates_answers.append({"model_name": model, "answer": f"Error: {result.get('error')}", "raw_answer": ""})
-                    update_status_cb(task_id, {"type": "model_done", "case": q_num, "model": model, "success": False, "error": result.get("error")})
+                    candidates_answers.append(
+                        {
+                            "model_name": model,
+                            "answer": f"Error: {result.get('error')}",
+                            "raw_answer": "",
+                        }
+                    )
+                    update_status_cb(
+                        task_id,
+                        {
+                            "type": "model_done",
+                            "case": q_num,
+                            "model": model,
+                            "success": False,
+                            "error": result.get("error"),
+                        },
+                    )
 
             # Save metrics progress to disk.
-            with open(os.path.join(run_folder, "technical_metrics.json"), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(run_folder, "technical_metrics.json"),
+                "w",
+                encoding="utf-8",
+            ) as f:
                 json.dump(technical_metrics, f, ensure_ascii=False, indent=2)
 
-            # 2. Judge Evaluation Phase
-            update_status_cb(task_id, {"type": "judge_start", "case": q_num, "model": judge_model})
-            judge_prompt = self._build_judge_prompt(question, base_rationale, specific_rationale, candidates_answers)
-            
-            judge_result = self.ollama.generate(
-                model=judge_model, prompt=judge_prompt, 
-                system_prompt="You are an objective AI judge. You MUST return ONLY a valid JSON object.",
-                format_json=True
+            # 2. Judge Evaluation Phase with Retry Policy
+            update_status_cb(
+                task_id, {"type": "judge_start", "case": q_num, "model": judge_model}
+            )
+            judge_prompt = self._build_judge_prompt(
+                question, base_rationale, specific_rationale, candidates_answers
             )
 
-            q_result = {"tag": tag, "question": question, "specific_rationale": specific_rationale, "results":[]}
+            max_retries = 3
+            parsed_judge = None
+            judge_error_msg = "Unknown error."
 
-            if judge_result["success"]:
-                update_status_cb(task_id, {"type": "judge_done", "case": q_num, "model": judge_model, "success": True})
-                try:
-                    parsed_judge = json.loads(judge_result["response_text"])
-                    for candidate in candidates_answers:
-                        model_name = candidate["model_name"]
-                        # Match the judge's score object to the correct candidate.
-                        judge_eval = next((item for item in parsed_judge.get("evaluations",[]) if item.get("model_name") == model_name), None)
-                        q_result["results"].append({
+            for attempt in range(max_retries):
+                sys_prompt = "You are an objective AI judge. You MUST return ONLY a valid JSON object."
+                if attempt > 0:
+                    # Append strict instructions if the previous attempt failed JSON validation.
+                    sys_prompt += " WARNING: Your previous response was invalid. You must output raw JSON starting with '{' without markdown blocks."
+
+                judge_result = self.ollama.generate(
+                    model=judge_model,
+                    prompt=judge_prompt,
+                    system_prompt=sys_prompt,
+                    format_json=True,
+                )
+
+                if judge_result["success"]:
+                    try:
+                        cleaned_json_text = self._extract_json(
+                            judge_result["response_text"]
+                        )
+                        parsed_judge = json.loads(cleaned_json_text)
+
+                        # Validate the core structure to ensure it's not arbitrary JSON.
+                        if "evaluations" in parsed_judge:
+                            break  # Success, exit retry loop
+                        else:
+                            judge_error_msg = "JSON missing 'evaluations' array."
+                            parsed_judge = None
+                    except json.JSONDecodeError as e:
+                        judge_error_msg = f"Invalid JSON format. {str(e)}"
+                else:
+                    judge_error_msg = judge_result.get(
+                        "error", "Failed to call judge model."
+                    )
+
+            q_result = {
+                "tag": tag,
+                "question": question,
+                "specific_rationale": specific_rationale,
+                "results": [],
+            }
+
+            if parsed_judge and "evaluations" in parsed_judge:
+                update_status_cb(
+                    task_id,
+                    {
+                        "type": "judge_done",
+                        "case": q_num,
+                        "model": judge_model,
+                        "success": True,
+                    },
+                )
+                for candidate in candidates_answers:
+                    model_name = candidate["model_name"]
+                    # Match the judge's score object to the correct candidate.
+                    judge_eval = next(
+                        (
+                            item
+                            for item in parsed_judge.get("evaluations", [])
+                            if item.get("model_name") == model_name
+                        ),
+                        None,
+                    )
+                    q_result["results"].append(
+                        {
                             "model_name": model_name,
                             "clean_answer": candidate["answer"],
                             "raw_answer": candidate["raw_answer"],
-                            "judge_evaluation": judge_eval if judge_eval else {"score": 0, "comment": "Judge did not provide an evaluation."}
-                        })
-                except json.JSONDecodeError:
-                    q_result["results"] = [{"error": "Judge returned invalid JSON format."}]
+                            "judge_evaluation": judge_eval
+                            if judge_eval
+                            else {"score": 0, "comment": "Judge omitted this model."},
+                        }
+                    )
             else:
-                update_status_cb(task_id, {"type": "judge_done", "case": q_num, "model": judge_model, "success": False, "error": "Failed to call judge."})
-                q_result["results"] = [{"error": "Failed to call the judge model."}]
+                update_status_cb(
+                    task_id,
+                    {
+                        "type": "judge_done",
+                        "case": q_num,
+                        "model": judge_model,
+                        "success": False,
+                        "error": judge_error_msg,
+                    },
+                )
+                # CRITICAL: Assign the error explicitly to EACH model so the UI does not mask the failure.
+                for candidate in candidates_answers:
+                    model_name = candidate["model_name"]
+                    q_result["results"].append(
+                        {
+                            "model_name": model_name,
+                            "clean_answer": candidate.get("answer", "No answer."),
+                            "raw_answer": candidate.get("raw_answer", ""),
+                            "error": judge_error_msg,
+                            "judge_evaluation": {"score": 0, "comment": "SYSTEM ERROR"},
+                        }
+                    )
 
             evaluation_data["questions_results"].append(q_result)
 
             # Save evaluation progress to disk.
-            with open(os.path.join(run_folder, "evaluation_results.json"), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(run_folder, "evaluation_results.json"),
+                "w",
+                encoding="utf-8",
+            ) as f:
                 json.dump(evaluation_data, f, ensure_ascii=False, indent=2)
 
         # 3. Final Summary Phase
         update_status_cb(task_id, {"type": "summary_start"})
-        
-        summary_prompt = "Provide a brief summary of the testing (2-3 paragraphs).\n\nMetrics:\n"
+
+        summary_prompt = (
+            "Provide a brief summary of the testing (2-3 paragraphs).\n\nMetrics:\n"
+        )
         for m in candidates:
             m_metrics = technical_metrics["metrics"].get(m, {})
             summary_prompt += f"Model {m}: generated {m_metrics.get('tokens_generated', 0)} tokens at {m_metrics.get('tokens_per_second', 0)} t/s.\n"
         summary_prompt += "\nAnalyze the overall quality of the answers based on the previous evaluations, discuss the performance metrics, and declare a final winner."
 
         summary_result = self.ollama.generate(
-            model=judge_model, prompt=summary_prompt, 
+            model=judge_model,
+            prompt=summary_prompt,
             system_prompt="You are the Head AI Judge. Write a short, concise summary (in Markdown format) based on the models' test results and metrics.",
-            format_json=False
+            format_json=False,
         )
 
         if summary_result["success"]:
             evaluation_data["final_summary"] = summary_result["response_text"]
         else:
-            evaluation_data["final_summary"] = "Failed to generate summary."
-            
+            evaluation_data["final_summary"] = (
+                f"Failed to generate summary: {summary_result.get('error', 'Unknown error')}"
+            )
+
         update_status_cb(task_id, {"type": "summary_done"})
 
         # Final save.
-        with open(os.path.join(run_folder, "evaluation_results.json"), "w", encoding="utf-8") as f:
+        with open(
+            os.path.join(run_folder, "evaluation_results.json"), "w", encoding="utf-8"
+        ) as f:
             json.dump(evaluation_data, f, ensure_ascii=False, indent=2)
 
         # Signal completion to SSE clients.
-        update_status_cb(task_id, {"type": "completed", "message": "All tasks completed successfully."})
+        update_status_cb(
+            task_id,
+            {"type": "completed", "message": "All tasks completed successfully."},
+        )
 
-    def _build_judge_prompt(self, question: str, base_rationale: str, specific_rationale: str, candidates_answers: list) -> str:
+    def _build_judge_prompt(
+        self,
+        question: str,
+        base_rationale: str,
+        specific_rationale: str,
+        candidates_answers: list,
+    ) -> str:
         """Constructs the prompt used to query the Judge model.
 
         Args:
@@ -200,7 +373,7 @@ class EvaluationPipeline:
         answers_text = ""
         for item in candidates_answers:
             answers_text += f"\n--- MODEL: {item['model_name']} ---\n{item['answer']}\n-------------------\n"
-            
+
         prompt = f"""Evaluate the models' answers to the technical question.
 
 USER QUESTION:

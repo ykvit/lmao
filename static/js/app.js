@@ -58,7 +58,14 @@ async function loadHistory() {
         runs.forEach(run => {
             const item = document.createElement('div');
             item.className = 'history-item';
-            item.innerHTML = `<div class="hist-id">${run.task_id.replace('run_', '')}</div><div class="hist-meta">${run.timestamp} • ${run.models_tested} Models</div>`;
+            item.innerHTML = `
+                <div class="hist-id" style="font-size: 1rem; color: var(--accent-color);">${escapeHtml(run.tag_name)}</div>
+                <div class="hist-meta" style="margin-top: 4px; font-size: 0.8rem;">
+                    ${run.timestamp} <br>
+                    ${run.models_tested} Models • ${run.questions_count} Qs <br>
+                    Judge: <span style="color: var(--text-primary);">${escapeHtml(run.judge_model)}</span>
+                </div>
+            `;
             item.onclick = () => {
                 document.getElementById('resultsContainer').innerHTML = '<div class="spinner" style="margin: 50px auto;"></div>';
                 fetchAndRenderResults(run.task_id);
@@ -111,7 +118,6 @@ async function startEvaluation(e) {
     }
 }
 
-// SSE Connection & UI Parsing
 function monitorSSE(taskId) {
     const source = new EventSource(`/api/stream/${taskId}`);
     let currentCaseBlock = null;
@@ -150,7 +156,7 @@ function monitorSSE(taskId) {
                 step.classList.remove('active');
                 if (data.success) {
                     step.classList.add('success');
-                    step.innerHTML = `✅ Model <b>${data.model}</b> is generating...`;
+                    step.innerHTML = `✅ Model <b>${data.model}</b> generated.`;
                 } else {
                     step.classList.add('error');
                     step.innerHTML = `❌ Model <b>${data.model}</b> error: ${data.error}`;
@@ -173,7 +179,7 @@ function monitorSSE(taskId) {
                 step.classList.remove('active');
                 if (data.success) {
                     step.classList.add('success');
-                    step.innerHTML = `✅ Judge <b>${data.model}</b> is analyzing...`;
+                    step.innerHTML = `✅ Judge <b>${data.model}</b> finished analyzing.`;
                 } else {
                     step.classList.add('error');
                     step.innerHTML = `❌ Judge <b>${data.model}</b> failed.`;
@@ -192,7 +198,7 @@ function monitorSSE(taskId) {
             if (step) {
                 step.classList.remove('active');
                 step.classList.add('success');
-                step.innerHTML = `✅ Generating final summary...`;
+                step.innerHTML = `✅ Final summary generated.`;
             }
         }
         else if (data.type === 'completed' || data.type === 'error') {
@@ -223,6 +229,26 @@ function monitorSSE(taskId) {
     };
 }
 
+function parseSimpleMarkdown(text) {
+    if (!text) return "";
+    let html = escapeHtml(text);
+    
+    html = html.replace(/^```markdown\n?/gim, '');
+    html = html.replace(/```$/gim, '');
+
+    html = html.replace(/^### (.*$)/gim, '<h4 style="margin: 10px 0 5px 0; color: var(--accent-color);">$1</h4>');
+    html = html.replace(/^## (.*$)/gim, '<h3 style="margin: 15px 0 5px 0; color: var(--text-primary);">$1</h3>');
+    html = html.replace(/^# (.*$)/gim, '<h2 style="margin: 20px 0 10px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">$1</h2>');
+    
+    html = html.replace(/\*\*(.*?)\*\*/gim, '<b style="color: var(--text-primary);">$1</b>');
+    
+    html = html.replace(/^\- (.*$)/gim, '<li style="margin-left: 20px;">$1</li>');
+    
+    html = html.replace(/\n/g, '<br>');
+    
+    return html;
+}
+
 async function fetchAndRenderResults(taskId) { 
     try {
         const response = await fetch(`/api/results/${taskId}`);
@@ -240,10 +266,69 @@ async function fetchAndRenderResults(taskId) {
             summaryDiv.className = 'summary-card';
             summaryDiv.innerHTML = `
                 <h3>🏆 Judge Final Summary</h3>
-                <div style="color: var(--text-primary); font-size: 0.95rem;">${escapeHtml(data.final_summary).replace(/\n/g, '<br>')}</div>
+                <div style="color: var(--text-secondary); font-size: 0.95rem; line-height: 1.5;">
+                    ${parseSimpleMarkdown(data.final_summary)}
+                </div>
             `;
             container.appendChild(summaryDiv);
         }
+
+        try {
+            const questionsCount = data.results[0].evaluations.length;
+            let tableHTML = `
+                <div class="summary-card" style="overflow-x: auto; margin-top: 20px;">
+                    <h3 style="margin-bottom: 15px;">📊 Models Comparison Matrix</h3>
+                    <table class="comparison-table">
+                        <thead>
+                            <tr>
+                                <th>Model</th>
+                                <th>Avg Score</th>
+                                ${Array.from({length: questionsCount}, (_, i) => `<th>Q${i+1}</th>`).join('')}
+                                <th>Speed (t/s)</th>
+                                <th>Tokens</th>
+                                <th>Time (s)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            data.results.forEach(modelData => {
+                const tps = modelData.metrics.tokens_per_second || 0;
+                const tokens = modelData.metrics.tokens_generated || 0;
+                const time = modelData.metrics.total_time_sec ? modelData.metrics.total_time_sec.toFixed(1) : 0;
+                let totalScore = 0;
+                let validEvals = 0;
+                let qScoresHtml = "";
+
+                modelData.evaluations.forEach(evaluationItem => {
+                    if (evaluationItem.error) {
+                        qScoresHtml += `<td style="color: #ef4444; font-weight: bold;" title="${escapeHtml(evaluationItem.error)}">Err</td>`;
+                    } else {
+                        const score = evaluationItem.judge_evaluation.score || 0;
+                        totalScore += score;
+                        validEvals++;
+                        let color = score >= 80 ? 'var(--accent-color)' : (score >= 50 ? '#f59e0b' : '#ef4444');
+                        qScoresHtml += `<td style="color: ${color}; font-weight: bold;">${score}</td>`;
+                    }
+                });
+
+                const avgScore = validEvals > 0 ? Math.round(totalScore / validEvals) : "N/A";
+
+                tableHTML += `
+                    <tr>
+                        <td style="font-weight: bold; color: var(--text-primary);">${escapeHtml(modelData.model_name)}</td>
+                        <td style="font-weight: bold; font-size: 1.1rem; border-right: 1px solid var(--border-color);">${avgScore}</td>
+                        ${qScoresHtml}
+                        <td style="border-left: 1px solid var(--border-color);">${tps}</td>
+                        <td>${tokens}</td>
+                        <td>${time}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `</tbody></table></div>`;
+            container.innerHTML += tableHTML;
+        } catch (tableErr) { console.error("Error building comparison table:", tableErr); }
 
         data.results.forEach(modelData => {
             try {
@@ -253,23 +338,36 @@ async function fetchAndRenderResults(taskId) {
                 let totalScore = 0;
                 let validEvals = 0;
                 
-                modelData.evaluations.forEach((eval, idx) => {
-                    const score = eval.judge_evaluation.score || 0;
-                    const comment = eval.judge_evaluation.comment || "No comment provided.";
-                    totalScore += score;
-                    validEvals++;
-                    let sClass = score >= 80 ? "good" : (score >= 50 ? "average" : "bad");
-                    evalsHtml += `
-                        <div class="eval-block">
-                            <div class="eval-tag">${escapeHtml(eval.tag)}</div>
-                            <div class="eval-question">Q${idx+1}: ${escapeHtml(eval.question)}</div>
-                            <div class="score ${sClass}" style="font-size: 1.1rem; margin-bottom: 5px;">Score: ${score}/100</div>
-                            <div class="comment">"${escapeHtml(comment)}"</div>
-                            <pre><code>${escapeHtml(eval.clean_answer)}</code></pre>
-                        </div>
-                    `;
+                modelData.evaluations.forEach((evaluationItem, idx) => {
+                    if (evaluationItem.error) {
+                        evalsHtml += `
+                            <div class="eval-block" style="border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.05);">
+                                <div class="eval-tag" style="background: #ef4444; color: white;">${escapeHtml(evaluationItem.tag)}</div>
+                                <div class="eval-question">Q${idx+1}: ${escapeHtml(evaluationItem.question)}</div>
+                                <div style="color: #ef4444; font-weight: bold; font-size: 1.1rem; margin-bottom: 5px;">⚠️ EVALUATION FAILED</div>
+                                <div class="comment" style="color: #ef4444;">Error details: ${escapeHtml(evaluationItem.error)}</div>
+                                <pre><code>${escapeHtml(evaluationItem.clean_answer)}</code></pre>
+                            </div>
+                        `;
+                    } else {
+                        const score = evaluationItem.judge_evaluation.score || 0;
+                        const comment = evaluationItem.judge_evaluation.comment || "No comment provided.";
+                        totalScore += score;
+                        validEvals++;
+                        let sClass = score >= 80 ? "good" : (score >= 50 ? "average" : "bad");
+                        evalsHtml += `
+                            <div class="eval-block">
+                                <div class="eval-tag">${escapeHtml(evaluationItem.tag)}</div>
+                                <div class="eval-question">Q${idx+1}: ${escapeHtml(evaluationItem.question)}</div>
+                                <div class="score ${sClass}" style="font-size: 1.1rem; margin-bottom: 5px;">Score: ${score}/100</div>
+                                <div class="comment">"${escapeHtml(comment)}"</div>
+                                <pre><code>${escapeHtml(evaluationItem.clean_answer)}</code></pre>
+                            </div>
+                        `;
+                    }
                 });
-                const avgScore = validEvals > 0 ? Math.round(totalScore / validEvals) : 0;
+
+                const avgScore = validEvals > 0 ? Math.round(totalScore / validEvals) : "N/A";
 
                 const card = document.createElement('div');
                 card.className = 'card';
@@ -285,7 +383,7 @@ async function fetchAndRenderResults(taskId) {
         });
     } catch (err) {
         console.error("Failed to fetch results:", err);
-        document.getElementById('resultsContainer').innerHTML = '<div class="welcome-msg" style="color:red;">Error rendering UI.</div>';
+        document.getElementById('resultsContainer').innerHTML = '<div class="welcome-msg" style="color:#ef4444;">Error rendering UI.</div>';
     }
 }
 

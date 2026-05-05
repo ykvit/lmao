@@ -1,27 +1,55 @@
 [tool.ruff]
-# Set the maximum line length to 88 (Black's default)
+# Set the maximum line length to 88 (matching Black's default)
 line-length = 88
-# Target Python 3.14 (matching your Dockerfile)
+# Target Python version matching the Dockerfile (Python 3.14)
 target-version = "py314"
 
 [tool.ruff.lint]
-# Enable Pyflakes (`F`), pycodestyle (`E`, `W`), and isort (`I`)
-select =["E", "F", "W", "I"]
-# Ignore lines that are too long (let the formatter handle what it can)
+# Enable standard rule sets:
+# E, W - pycodestyle errors and warnings
+# F    - Pyflakes (logic errors)
+# I    - isort (import sorting)
+select = ["E", "F", "W", "I"]
+# Ignore E501 (line length) because the formatter handles it automatically
 ignore = ["E501"]
 
 [tool.ruff.format]
-# Like Black, use double quotes for strings.
+# Use double quotes for strings (standard Python style)
 quote-style = "double"
-# Like Black, indent with spaces, rather than tabs.
+# Use spaces for indentation instead of tabs
 indent-style = "space"
 
 [tool.pytest.ini_options]
+# Minimum version of pytest required
 minversion = "6.0"
-addopts = "-ra -q"
+# Standard execution flags:
+# -ra: show extra test summary info for all except passed
+# -q: quiet mode to reduce noise
+# --cov: calculate coverage for the core package and app.py
+# --cov-report=term-missing: output a table with specific missing line numbers
+addopts = "-ra -q --cov=core --cov=app --cov-report=term-missing"
 testpaths = [
     "tests",
 ]
+# Ensure the root directory is in PYTHONPATH so modules are discoverable
 pythonpath = [
     ".",
 ]
+
+[tool.coverage.run]
+# Define the source code directories to analyze
+source = ["core", "."]
+# Exclude test files and init files from the coverage calculation
+omit = [
+    "tests/*",
+    "*/__init__.py"
+]
+
+[tool.coverage.report]
+# Highlight specific lines that were not executed during testing
+show_missing = true
+# Threshold for a successful CI run. 
+# Currently set to 0 for initial setup; recommend increasing to 80+ later.
+fail_under = 0
+# Do not skip files with 100% coverage to keep the report complete
+skip_covered = false

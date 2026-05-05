@@ -1,86 +1,78 @@
 # Local Model Assessment Operator
 
-A tool for the automated evaluation of local Large Language Models (LLMs) running via Ollama. It allows you to benchmark performance (tokens/sec) and intellectual capabilities (quality of answers) side-by-side, using another LLM as an objective "judge".
+Automated benchmarking and qualitative evaluation for local Large Language Models.
 
+The Local Model Assessment Operator provides a robust framework for evaluating LLMs running on [Ollama](https://ollama.com). It measures technical performance (tokens/sec) alongside intellectual quality using a "Judge-LLM" scoring system.
 
-## Prerequisites
+## Key Features
 
-Before you begin, ensure you have the following installed:
+* 3-Panel Dashboard: Unified interface for configuration, real-time monitoring, and historical archives.
+* Asynchronous Evaluation: Multi-threaded pipeline for concurrent benchmarking and qualitative scoring.
+* Real-time Streaming: Server-Sent Events (SSE) provide live progress updates during model execution.
+* VRAM Optimization: Automatic memory management using `keep_alive: 0` to enable sequential testing of large models on consumer hardware.
+* Quality Gates: Integrated Ruff linting, security auditing (`pip-audit`), and automated unit testing.
 
-1.  **Python 3.10+**
-2.  **Ollama**: The application must be installed and running. You can download it from [ollama.com](https://ollama.com/).
-3.  **At least two LLMs** downloaded via Ollama (one to act as a judge, one as a candidate).
-    ```bash
-    # Example:
-    ollama pull gemma3:270m-it-qat
-    ollama pull qwen3.5:0.8b
-    ```
+## Quick Start
 
-## Installation & Setup
+The fastest way to run the operator is using Docker and the provided `Makefile`.
 
-Follow these steps to get the operator running locally.
+### 1. Prerequisites
 
-### Step 0: Clone & Create Virtual Environment
+* [Docker](https://www.docker.com/get-started) and Docker Compose.
+* [Ollama](https://ollama.com) service running.
+* At least two models pulled in Ollama (one candidate, one judge).
 
-First, clone the repository and navigate into the directory. Then, create and activate a Python virtual environment.
-
-```bash
-# Clone the repository
-git clone https://your-git-repository/local-model-assessor.git
-cd local-model-assessor
-
-# Create a virtual environment
-python -m venv venv
-
-# Activate the environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-venv\Scripts\activate
-```
-
-### Step 1: Install Dependencies
-
-Install all the required Python libraries using the `requirements.txt` file.
+### 2. Launching the Operator
 
 ```bash
-pip install -r requirements.txt
+# Initial one-time setup for external volumes
+make setup
+
+# Start the production environment
+make prod
 ```
-
-### Step 2: Configure Environment
-
-Copy the example environment file and edit it if your Ollama instance runs on a different address or port.
-
-```bash
-# On macOS/Linux:
-cp .env.example .env
-
-# On Windows:
-copy .env.example .env
-```
-Now, open the `.env` file and adjust the `OLLAMA_BASE_URL` if necessary.
-
-## Running the Application
-
-With the setup complete, start the Flask web server.
-
-```bash
-python app.py
-```
-
-The server will start, and you can access the dashboard by opening your web browser to:
-**http://127.0.0.1:5000**
+The application will be available at **http://localhost:5000**.
 
 ---
 
-## Cleanup
+## Development
 
-To stop the server, press `Ctrl+C` in the terminal where it is running.
+The project uses a modular `docker-compose` architecture and a unified `Makefile` for developer workflow.
 
-To exit the Python virtual environment, simply run:
+### Standard Commands
 
-```bash
-deactivate
-```
+| Command | Description |
+|:--- |:--- |
+| `make dev` | Start development environment with hot-reloading. |
+| `make dev GPU=1` | Start development environment with NVIDIA GPU support. |
+| `make ci` | Run full local pipeline: Auto-format, Lint, Security Audit, and Tests. |
+| `make test` | Execute pytest suite with coverage report. |
+| `make logs` | View real-time logs from the active environment. |
+| `make down` | Stop the active environment. |
+| `make clean` | Deep clean containers, network, and Python caches. |
 
-To completely remove the application, you can delete the project folder.
+### Manual Setup (Optional)
+
+If you prefer to run the application without Docker:
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Configure Environment:
+   Create a `.env` file based on `.env.example`.
+3. Run:
+   ```bash
+   python app.py
+   ```
+
+## Architecture
+
+* Backend: Flask (Python 3.14-slim), Gunicorn.
+* Orchestration: Docker Compose (Modular Base + Overrides).
+* CI/CD Infrastructure: Ruff (Linting/Formatting), Pytest (Testing), pip-audit (Security).
+* Memory Management: Sequential VRAM unloading for low-latency testing environments.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

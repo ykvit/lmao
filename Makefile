@@ -77,7 +77,7 @@ lint: ##> Run static code analysis (GH Actions tool).
 
 audit: ##> Run vulnerability scanning.
 	@echo "Running Security Audit (pip-audit)"
-	$(CMD_DEV) run --rm --no-deps $(SERVICE_APP) pip-audit
+	$(CMD_DEV) run --rm --no-deps -e XDG_CACHE_HOME=/tmp/.cache $(SERVICE_APP) pip-audit
 
 test: ##> Run tests.
 	@echo "Running Pytest"

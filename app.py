@@ -81,6 +81,7 @@ def start_evaluation():
 
     test_cases = data.get("test_cases", [])
     first_tag = test_cases[0].get("tag", "run") if test_cases else "run"
+    first_tag = _sanitize_tag(first_tag)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     task_id = f"run_{first_tag}_{timestamp}"
@@ -285,5 +286,5 @@ def health_check():
 
 if __name__ == "__main__":
     port = int(os.environ.get("FLASK_PORT", 5000))
-    debug = os.environ.get("FLASK_DEBUG", "True").lower() in ("true", "1", "yes")
+    debug = os.environ.get("FLASK_DEBUG", "False").lower() in ("true", "1", "yes")
     app.run(host="0.0.0.0", port=port, debug=debug)

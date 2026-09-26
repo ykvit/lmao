@@ -21,6 +21,8 @@ venv/
 
 # Secrets
 .env
+.env.*
+!.env.example
 
 # Application State & Logs
 history/
@@ -29,3 +31,9 @@ history/
 # Testing
 .pytest_cache/
 .ruff_cache/
+
+# Coverage reports
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

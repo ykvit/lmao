@@ -1,4 +1,0 @@
-rules:
-  self-repository:
-    ignore:
-      - release.yml:21

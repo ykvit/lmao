@@ -16,13 +16,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  IMAGE: lmao:ci-${{ github.sha }}
+  CI_PLATFORM: linux/amd64
+  CI_DEV_IMAGE: lmao:dev-ci-${{ github.sha }}
+  CI_IMAGE: lmao:ci-${{ github.sha }}
 
 jobs:
   lint-workflows:
-    name: Lint GitHub Workflows
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    name: Lint Workflows & CI Scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -30,18 +32,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: actionlint
-        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
-
-      - name: zizmor
+      - name: Check workflows and CI scripts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pipx run zizmor --format=github .github/workflows/
+        run: make ci-workflows WORKFLOW_LINT_MODE=online
 
   lint-and-test:
     name: Lint, Audit & Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -49,32 +48,38 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build dev image
-        run: docker build --target dev --tag lmao:test .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Ruff format check
-        run: docker run --rm lmao:test ruff format --check .
+      - name: Expose GitHub cache runtime
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const names = [
+              "ACTIONS_RUNTIME_TOKEN",
+              "ACTIONS_RESULTS_URL",
+            ];
 
-      - name: Ruff lint
-        run: docker run --rm lmao:test ruff check --output-format=github .
+            for (const name of names) {
+              const value = process.env[name];
 
-      - name: Audit production dependencies
-        run: |
-          docker run --rm lmao:test sh -ec '
-            uv export --locked --no-dev --no-emit-project --no-hashes \
-              --format requirements-txt \
-              --output-file /tmp/requirements-audit.txt
-            pip-audit --no-deps -r /tmp/requirements-audit.txt
-          '
+              if (!value) {
+                throw new Error(`Missing GitHub cache variable: ${name}`);
+              }
 
-      - name: Run tests with coverage
-        run: |
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            --volume "${PWD}:/app" \
-            --workdir /app \
-            lmao:test \
-            pytest --cov-report=xml --cov-report=html
+              if (name === "ACTIONS_RUNTIME_TOKEN") {
+                core.setSecret(value);
+              }
+
+              core.exportVariable(name, value);
+            }
+
+      - name: Check formatting, lint, dependencies, and tests
+        env:
+          BUILDX_CACHE_ARGS: >-
+            --cache-from=type=gha,version=2,scope=lmao-dev
+            --cache-to=type=gha,version=2,scope=lmao-dev,mode=max
+        run: make ci-quality
 
       - name: Upload coverage report
         if: always()
@@ -89,8 +94,8 @@ jobs:
 
   docker-build:
     name: Build, Scan & Smoke-test Image
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -98,90 +103,48 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
-        with:
-          dockerfile: Dockerfile
-          failure-threshold: warning
-
-      - name: Validate Compose configurations
-        run: |
-          set -euo pipefail
-          combos=(
-            "compose.dev.yaml"
-            "compose.prod.yaml"
-            "compose.dev.yaml compose.gpu.yaml"
-            "compose.prod.yaml compose.gpu.yaml"
-          )
-          for combo in "${combos[@]}"; do
-            args=(-f compose.base.yaml)
-            for f in ${combo}; do args+=(-f "${f}"); done
-            echo "Validating: compose.base.yaml ${combo}"
-            env UID="$(id -u)" GID="$(id -g)" docker compose "${args[@]}" config --quiet
-          done
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Build production image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - name: Expose GitHub cache runtime
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          context: .
-          target: production
-          push: false
-          load: true
-          tags: ${{ env.IMAGE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-          sbom: false
+          script: |
+            const names = [
+              "ACTIONS_RUNTIME_TOKEN",
+              "ACTIONS_RESULTS_URL",
+            ];
 
-      - name: Start container
-        run: |
-          docker run --detach --name lmao-ci \
-            --publish 5000:5000 \
-            "${IMAGE}"
+            for (const name of names) {
+              const value = process.env[name];
 
-      - name: Wait for application health
-        run: |
-          for i in {1..30}; do
-            if [ "$(docker inspect -f '{{.State.Running}}' lmao-ci)" != "true" ]; then
-              echo "::error::Container exited prematurely"
-              exit 1
-            fi
-            if curl --fail --silent http://127.0.0.1:5000/health; then
-              echo "Application is healthy."
-              exit 0
-            fi
-            echo "Waiting for application... ($i/30)"
-            sleep 2
-          done
-          echo "::error::Application failed to become healthy"
-          exit 1
+              if (!value) {
+                throw new Error(`Missing GitHub cache variable: ${name}`);
+              }
 
-      - name: Verify container runs as non-root
-        run: |
-          USER_ID="$(docker exec lmao-ci id -u)"
-          if [ "${USER_ID}" = "0" ]; then
-            echo "::error::Container is running as root"
-            exit 1
-          fi
-          echo "Container runs as UID ${USER_ID}."
+              if (name === "ACTIONS_RUNTIME_TOKEN") {
+                core.setSecret(value);
+              }
 
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+              core.exportVariable(name, value);
+            }
+
+      - name: Set Trivy cache date
+        id: cache-date
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          image-ref: ${{ env.IMAGE }}
-          severity: CRITICAL,HIGH
-          exit-code: "1"
-          ignore-unfixed: true
-          vuln-type: os,library
-          scanners: vuln
+          path: ${{ runner.temp }}/trivy-cache
+          key: trivy-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-date.outputs.day }}
+          restore-keys: |
+            trivy-v1-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Container logs
-        if: always()
-        run: docker logs lmao-ci 2>&1 || true
-
-      - name: Cleanup
-        if: always()
-        run: docker rm -f lmao-ci || true
+      - name: Validate, build, smoke-test, and scan
+        env:
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+          BUILDX_CACHE_ARGS: >-
+            --cache-from=type=gha,version=2,scope=lmao-production
+            --cache-to=type=gha,version=2,scope=lmao-production,mode=max,ignore-error=true
+        run: make ci-image

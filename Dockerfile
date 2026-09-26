@@ -4,7 +4,7 @@ FROM python:3.14.4-slim AS base
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
-# Patches the base image's bundled system pip (unused at runtime — venv pip is what runs), just to clear Trivy findings.
+# Patches the base image's bundled system pip and setuptools (unused at runtime — venv is what runs), just to clear Trivy findings.
 # hadolint ignore=DL3013
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools
 
@@ -47,6 +47,13 @@ FROM base AS production
 RUN groupadd -r appuser && useradd -r -m -g appuser appuser
 
 COPY --from=builder /opt/venv /opt/venv
+
+# Runtime never invokes system pip/setuptools — only /opt/venv runs. Stripping them
+# removes their CVEs entirely (incl. pip's vendored msgpack) instead of chasing upstream patches.
+RUN rm -rf /usr/local/lib/python3.14/site-packages/pip* \
+           /usr/local/lib/python3.14/site-packages/setuptools* \
+           /usr/local/lib/python3.14/site-packages/pkg_resources \
+           /usr/local/bin/pip*
 
 COPY core/ /app/core/
 COPY static/ /app/static/

@@ -26,14 +26,14 @@ COPY pyproject.toml uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project \
-    --python /usr/local/bin/python --no-python-download
+    --python /usr/local/bin/python --no-python-downloads
 
 
 FROM deps AS dev
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project \
-    --python /usr/local/bin/python --no-python-download
+    --python /usr/local/bin/python --no-python-downloads
 
 COPY . .
 

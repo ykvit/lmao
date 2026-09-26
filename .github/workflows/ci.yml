@@ -41,7 +41,7 @@ jobs:
   lint-and-test:
     name: Lint, Audit & Test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -49,33 +49,32 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v6.1.0
-        with:
-          version: "0.9.0"
-          enable-cache: true
-
-      - name: Install Python and dependencies
-        run: |
-          uv python install 3.14.7
-          uv sync --locked --no-python-download
+      - name: Build dev image
+        run: docker build --target dev --tag lmao:test .
 
       - name: Ruff format check
-        run: uv run --locked ruff format --check .
+        run: docker run --rm lmao:test ruff format --check .
 
       - name: Ruff lint
-        run: uv run --locked ruff check --output-format=github .
+        run: docker run --rm lmao:test ruff check --output-format=github .
 
       - name: Audit production dependencies
         run: |
-          uv export --locked --no-dev --no-emit-project \
-            --format requirements-txt \
-            --output-file /tmp/requirements-audit.txt
-          uv run --locked pip-audit --no-deps \
-            -r /tmp/requirements-audit.txt
+          docker run --rm lmao:test sh -ec '
+            uv export --locked --no-dev --no-emit-project --no-hashes \
+              --format requirements-txt \
+              --output-file /tmp/requirements-audit.txt
+            pip-audit --no-deps -r /tmp/requirements-audit.txt
+          '
 
       - name: Run tests with coverage
-        run: uv run --locked pytest --cov-report=xml --cov-report=html
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "${PWD}:/app" \
+            --workdir /app \
+            lmao:test \
+            pytest --cov-report=xml --cov-report=html
 
       - name: Upload coverage report
         if: always()

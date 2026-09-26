@@ -8,12 +8,9 @@ on:
   workflow_dispatch:
   workflow_call:
 
-# Default: read-only.
-# Jobs that need additional permissions must explicitly opt in.
 permissions:
   contents: read
 
-# Cancel superseded runs on PRs only; every commit on main gets a final status.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -168,6 +165,76 @@ jobs:
             exit 1
           fi
           echo "Container runs as UID ${USER_ID}."
+
+      # Temporary diagnostics: generate a report without failing the job.
+      # The original blocking scan remains below.
+      - name: Generate Trivy diagnostic JSON
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: json
+          output: trivy-report.json
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
+
+      - name: Show Trivy finding details
+        run: |
+          set -euo pipefail
+
+          echo "=== Image metadata ==="
+          jq '{ImageID: .Metadata.ImageID, RepoTags: .Metadata.RepoTags}' trivy-report.json
+
+          echo "=== Relevant findings, result targets and package records ==="
+          jq '
+            .Results[]?
+            | select(
+                any(.Vulnerabilities[]?; .PkgName == "msgpack" or .PkgName == "setuptools")
+                or any(.Packages[]?; .Name == "msgpack" or .Name == "setuptools")
+              )
+            | {
+                Target,
+                Class,
+                Type,
+                RelevantVulnerabilities: [
+                  .Vulnerabilities[]?
+                  | select(.PkgName == "msgpack" or .PkgName == "setuptools")
+                ],
+                RelevantPackages: [
+                  .Packages[]?
+                  | select(.Name == "msgpack" or .Name == "setuptools")
+                ]
+              }
+          ' trivy-report.json
+
+          echo "=== Package records visible to Python in the running container ==="
+          docker exec -i lmao-ci python - <<'PY'
+          from importlib import metadata
+
+          for name in ("msgpack", "setuptools"):
+              try:
+                  distribution = metadata.distribution(name)
+              except metadata.PackageNotFoundError:
+                  print(f"{name}: not found by importlib.metadata")
+              else:
+                  print(f"{name}: version={distribution.version}, location={distribution.locate_file('')}")
+          PY
+
+          echo "=== Matching paths in the running container ==="
+          docker exec lmao-ci sh -c \
+            "find /usr/local /opt /app \( -iname '*msgpack*' -o -iname '*setuptools*' \) -print 2>/dev/null" \
+            || true
+
+      - name: Upload Trivy diagnostic report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trivy-diagnostic-report
+          path: trivy-report.json
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

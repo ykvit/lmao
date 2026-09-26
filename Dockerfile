@@ -1,5 +1,13 @@
 FROM python:3.14.4-slim AS base
 
+# OS security patches from Debian's point release; exact package/version pins break on the next point-release.
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
+# Patches the base image's bundled system pip (unused at runtime — venv pip is what runs), just to clear Trivy findings.
+# hadolint ignore=DL3013
+RUN python -m pip install --no-cache-dir --upgrade pip
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"

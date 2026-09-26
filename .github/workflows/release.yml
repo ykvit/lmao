@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  CI_PLATFORM: linux/amd64
+  CI_IMAGE: lmao:release-scan
+
+jobs:
+  ci:
+    name: CI gate
+    # Temporary, targeted exception for the existing tooling issue.
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository]
+    permissions:
+      contents: read
+
+  publish:
+    name: Build, Verify & Promote
+    needs: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Compute image names
+        id: image
+        run: |
+          set -euo pipefail
+
+          image_name="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          candidate="${image_name}:candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          echo "name=${image_name}" >> "${GITHUB_OUTPUT}"
+          echo "candidate=${candidate}" >> "${GITHUB_OUTPUT}"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+
+      - name: Validate release tags
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${IMAGE_TAGS}" ]]; then
+            echo "::error::No image tags generated. Check the release tag format."
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build once. Only a technical candidate tag is published here.
+      # Version tags are assigned after scanning and attestation.
+      - name: Build and push candidate
+        id: candidate
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: production
+          platforms: ${{ env.CI_PLATFORM }}
+          pull: true
+          push: true
+          tags: ${{ steps.image.outputs.candidate }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Pull candidate by immutable digest
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          image_ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
+
+          docker pull \
+            --platform "${CI_PLATFORM}" \
+            "${image_ref}"
+
+          docker tag "${image_ref}" "${CI_IMAGE}"
+
+      # Crucially: no build prerequisite in this target.
+      - name: Smoke-test and scan the exact candidate
+        env:
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: make ci-image-check
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.candidate.outputs.digest }}
+          push-to-registry: true
+
+      # Copy the existing image index to release tags.
+      # This preserves the image and its BuildKit attestations.
+      - name: Promote verified image to release tags
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.candidate.outputs.digest }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+
+          args=()
+
+          while IFS= read -r tag; do
+            if [[ -n "${tag}" ]]; then
+              args+=(--tag "${tag}")
+            fi
+          done <<< "${IMAGE_TAGS}"
+
+          if [[ "${#args[@]}" -eq 0 ]]; then
+            echo "::error::No release tags provided"
+            exit 1
+          fi
+
+          docker buildx imagetools create \
+            "${args[@]}" \
+            "${IMAGE_NAME}@${IMAGE_DIGEST}"
+
+      - name: Write release summary
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.candidate.outputs.digest }}
+        run: |
+          {
+            echo "### Published image"
+            echo
+            printf '%s\n' "\`${IMAGE_NAME}@${IMAGE_DIGEST}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  github-release:
+    name: GitHub Release
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Allow rerunning a workflow for an already created release.
+          if gh release view "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "GitHub Release ${TAG} already exists."
+            exit 0
+          fi
+
+          args=(
+            --repo "${GITHUB_REPOSITORY}"
+            --title "${TAG}"
+            --generate-notes
+            --verify-tag
+          )
+
+          if [[ "${TAG}" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "${TAG}" "${args[@]}"

@@ -7,6 +7,7 @@ handles Server-Sent Events (SSE) for real-time UI updates, and manages task hist
 
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -27,6 +28,16 @@ TASKS = {}
 
 ollama_client = OllamaClient()
 pipeline = EvaluationPipeline(ollama_client)
+
+_SAFE_TAG_RE = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _sanitize_tag(tag, fallback="run", max_length=40):
+    """Strip anything unsafe for a filesystem path segment."""
+    if not isinstance(tag, str) or not tag.strip():
+        return fallback
+    cleaned = _SAFE_TAG_RE.sub("_", tag.strip())[:max_length]
+    return cleaned or fallback
 
 
 def update_task_status(task_id: str, payload: dict) -> None:
@@ -81,6 +92,7 @@ def start_evaluation():
 
     test_cases = data.get("test_cases", [])
     first_tag = test_cases[0].get("tag", "run") if test_cases else "run"
+    first_tag = _sanitize_tag(first_tag)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     task_id = f"run_{first_tag}_{timestamp}"
@@ -285,5 +297,5 @@ def health_check():
 
 if __name__ == "__main__":
     port = int(os.environ.get("FLASK_PORT", 5000))
-    debug = os.environ.get("FLASK_DEBUG", "True").lower() in ("true", "1", "yes")
+    debug = os.environ.get("FLASK_DEBUG", "False").lower() in ("true", "1", "yes")
     app.run(host="0.0.0.0", port=port, debug=debug)

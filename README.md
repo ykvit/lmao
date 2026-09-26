@@ -1,78 +1,74 @@
 # Local Model Assessment Operator
 
-Automated benchmarking and qualitative evaluation for local Large Language Models.
+A web application for benchmarking local LLMs with [Ollama](https://ollama.com). It measures generation performance and scores responses using a judge model.
 
-The Local Model Assessment Operator provides a robust framework for evaluating LLMs running on [Ollama](https://ollama.com). It measures technical performance (tokens/sec) alongside intellectual quality using a "Judge-LLM" scoring system.
+## Features
 
-## Key Features
+- Dashboard for configuring evaluations and viewing results.
+- Live progress updates via Server-Sent Events.
+- Evaluation history stored in a Docker volume.
+- Sequential model unloading to reduce VRAM usage.
 
-* 3-Panel Dashboard: Unified interface for configuration, real-time monitoring, and historical archives.
-* Asynchronous Evaluation: Multi-threaded pipeline for concurrent benchmarking and qualitative scoring.
-* Real-time Streaming: Server-Sent Events (SSE) provide live progress updates during model execution.
-* VRAM Optimization: Automatic memory management using `keep_alive: 0` to enable sequential testing of large models on consumer hardware.
-* Quality Gates: Integrated Ruff linting, security auditing (`pip-audit`), and automated unit testing.
+## Quick start
 
-## Quick Start
-
-The fastest way to run the operator is using Docker and the provided `Makefile`.
-
-### 1. Prerequisites
-
-* [Docker](https://www.docker.com/get-started) and Docker Compose.
-* [Ollama](https://ollama.com) service running.
-* At least two models pulled in Ollama (one candidate, one judge).
-
-### 2. Launching the Operator
+Requires Docker with Compose v2, GNU Make, and Bash. NVIDIA Container Toolkit is required only for GPU mode.
 
 ```bash
-# Initial one-time setup for external volumes
-make setup
-
-# Start the production environment
-make prod
+make prod          # CPU
+make prod GPU=1    # NVIDIA GPU
 ```
-The application will be available at **http://localhost:5000**.
 
----
+Open **http://localhost:5000**. Compose starts both the application and Ollama; a separate Ollama installation is not needed.
+
+Download a candidate model and a judge model:
+
+```bash
+docker compose -f compose.base.yaml -f compose.prod.yaml exec ollama ollama pull MODEL_NAME
+```
+
+Run the command for each model. To stop the environment:
+
+```bash
+make down ENV=prod
+```
 
 ## Development
 
-The project uses a modular `docker-compose` architecture and a unified `Makefile` for developer workflow.
+```bash
+make dev           # Development server with hot reload
+make dev GPU=1     # Development with NVIDIA GPU
+make logs          # Follow development logs
+make test          # Run tests with coverage
+```
 
-### Standard Commands
+### Quality checks
 
-| Command | Description |
-|:--- |:--- |
-| `make dev` | Start development environment with hot-reloading. |
-| `make dev GPU=1` | Start development environment with NVIDIA GPU support. |
-| `make ci` | Run full local pipeline: Auto-format, Lint, Security Audit, and Tests. |
-| `make test` | Execute pytest suite with coverage report. |
-| `make logs` | View real-time logs from the active environment. |
-| `make down` | Stop the active environment. |
-| `make clean` | Deep clean containers, network, and Python caches. |
+Tools and scanners run through Docker; they do not need to be installed on the host.
 
-### Manual Setup (Optional)
+```bash
+GH_TOKEN="$(gh auth token)" make ci        # Fix formatting, then run all checks
+GH_TOKEN="$(gh auth token)" make ci-check  # Run checks without fixing source
+```
 
-If you prefer to run the application without Docker:
+Provide `GH_TOKEN` through your environment if you do not use GitHub CLI. `make ci-check` mirrors the CI checks: workflow and shell linting, Ruff, dependency audit, tests, Docker validation, smoke test, and Trivy scan. It may generate coverage reports but does not automatically fix source files.
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Configure Environment:
-   Create a `.env` file based on `.env.example`.
-3. Run:
-   ```bash
-   python app.py
-   ```
+`make ci` changes Python files. Review `git diff` before committing.
 
-## Architecture
+### Running without Docker
 
-* Backend: Flask (Python 3.14-slim), Gunicorn.
-* Orchestration: Docker Compose (Modular Base + Overrides).
-* CI/CD Infrastructure: Ruff (Linting/Formatting), Pytest (Testing), pip-audit (Security).
-* Memory Management: Sequential VRAM unloading for low-latency testing environments.
+Requires Python 3.14, [uv](https://docs.astral.sh/uv/), and a running Ollama instance:
+
+```bash
+uv sync --locked
+uv run python app.py
+```
+
+For a custom Ollama URL, copy `.env.example` to `.env` and edit `OLLAMA_BASE_URL`. Docker Compose does not require this file.
+
+## CI and releases
+
+GitHub Actions runs the same Makefile check targets. Version tags matching `v*.*.*` trigger a CI gate followed by image verification and publication to GHCR. Dependabot monitors GitHub Actions, uv, and Docker dependencies.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+[MIT](LICENSE).

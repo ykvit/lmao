@@ -1,0 +1,189 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  # Allows release.yml to reuse this workflow as a quality gate
+  workflow_call:
+
+# Default: read-only.
+# Jobs that need additional permissions must explicitly opt in.
+permissions:
+  contents: read
+
+# Cancel superseded runs on PRs only; every commit on main gets a final status.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.14"
+  IMAGE: lmao:ci-${{ github.sha }}
+
+jobs:
+  lint-workflows:
+    name: Lint GitHub Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+
+      - name: zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pipx run zizmor --format=github .github/workflows/
+
+  lint-and-test:
+    name: Lint, Audit & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Ruff lint
+        run: ruff check --output-format=github .
+
+      - name: Dependency audit
+        run: pip-audit
+
+      - name: Run tests with coverage
+        run: pytest --cov-report=xml --cov-report=html
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  docker-build:
+    name: Build, Scan & Smoke-test Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: warning
+
+      - name: Validate Compose configurations
+        run: |
+          set -euo pipefail
+          combos=(
+            "compose.dev.yaml"
+            "compose.prod.yaml"
+            "compose.dev.yaml compose.gpu.yaml"
+            "compose.prod.yaml compose.gpu.yaml"
+          )
+          for combo in "${combos[@]}"; do
+            args=(-f compose.base.yaml)
+            for f in ${combo}; do args+=(-f "${f}"); done
+            echo "Validating: compose.base.yaml ${combo}"
+            env UID="$(id -u)" GID="$(id -g)" docker compose "${args[@]}" config --quiet
+          done
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          push: false
+          load: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Start container
+        run: |
+          docker run --detach --name lmao-ci \
+            --publish 5000:5000 \
+            "${IMAGE}"
+
+      - name: Wait for application health
+        run: |
+          for i in {1..30}; do
+            if [ "$(docker inspect -f '{{.State.Running}}' lmao-ci)" != "true" ]; then
+              echo "::error::Container exited prematurely"
+              exit 1
+            fi
+            if curl --fail --silent http://127.0.0.1:5000/health; then
+              echo "Application is healthy."
+              exit 0
+            fi
+            echo "Waiting for application... ($i/30)"
+            sleep 2
+          done
+          echo "::error::Application failed to become healthy"
+          exit 1
+
+      - name: Verify container runs as non-root
+        run: |
+          USER_ID="$(docker exec lmao-ci id -u)"
+          if [ "${USER_ID}" = "0" ]; then
+            echo "::error::Container is running as root"
+            exit 1
+          fi
+          echo "Container runs as UID ${USER_ID}."
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
+
+      - name: Container logs
+        if: always()
+        run: docker logs lmao-ci 2>&1 || true
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f lmao-ci || true

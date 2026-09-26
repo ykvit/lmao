@@ -7,6 +7,7 @@ handles Server-Sent Events (SSE) for real-time UI updates, and manages task hist
 
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -27,6 +28,16 @@ TASKS = {}
 
 ollama_client = OllamaClient()
 pipeline = EvaluationPipeline(ollama_client)
+
+_SAFE_TAG_RE = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _sanitize_tag(tag, fallback="run", max_length=40):
+    """Strip anything unsafe for a filesystem path segment."""
+    if not isinstance(tag, str) or not tag.strip():
+        return fallback
+    cleaned = _SAFE_TAG_RE.sub("_", tag.strip())[:max_length]
+    return cleaned or fallback
 
 
 def update_task_status(task_id: str, payload: dict) -> None:

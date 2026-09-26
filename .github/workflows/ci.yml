@@ -157,6 +157,22 @@ jobs:
           echo "::error::Application failed to become healthy"
           exit 1
 
+      - name: Identify layer reported by Trivy
+        run: |
+          set -euo pipefail
+          docker pull python:3.14.4-slim
+
+          echo "=== Application image layers ==="
+          docker image inspect "${IMAGE}" \
+            --format '{{json .RootFS.Layers}}' | jq -r 'to_entries[] | "\(.key): \(.value)"'
+
+          echo "=== Base image layers ==="
+          docker image inspect python:3.14.4-slim \
+            --format '{{json .RootFS.Layers}}' | jq -r 'to_entries[] | "\(.key): \(.value)"'
+
+          echo "=== Vulnerability layer ==="
+          echo 'sha256:0cee34d6d81cbf58855be84e325f71326b5e87b11b8139a10b1babbe9ff8ac87'
+          
       - name: Verify container runs as non-root
         run: |
           USER_ID="$(docker exec lmao-ci id -u)"

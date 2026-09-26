@@ -6,7 +6,7 @@ RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 # Patches the base image's bundled system pip (unused at runtime — venv pip is what runs), just to clear Trivy findings.
 # hadolint ignore=DL3013
-RUN python -m pip install --no-cache-dir --upgrade pip
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

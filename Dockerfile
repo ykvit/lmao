@@ -9,7 +9,8 @@ WORKDIR /app
 
 FROM base AS builder
 
-# hadolint ignore=DL3008 # build-only dep, discarded after this stage; pinning exact debian package/version breaks on the next point-release.
+# Build-only dep, discarded after this stage; pinning exact debian package/version breaks on the next point-release.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
@@ -17,7 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 
 COPY requirements.txt .
-# hadolint ignore=DL3013 # bootstrapping pip itself; app deps are pinned via -r requirements.txt below
+# Bootstrapping pip itself; app deps are pinned via -r requirements.txt below.
+# hadolint ignore=DL3013
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 

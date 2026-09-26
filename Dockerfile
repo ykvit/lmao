@@ -48,11 +48,13 @@ RUN groupadd -r appuser && useradd -r -m -g appuser appuser
 
 COPY --from=builder /opt/venv /opt/venv
 
-# Runtime never invokes system pip/setuptools — only /opt/venv runs. Stripping them
-# removes their CVEs entirely (incl. pip's vendored msgpack) instead of chasing upstream patches.
+# Runtime never invokes system pip/setuptools/ensurepip — only /opt/venv runs. Stripping them
+# removes their CVEs entirely (incl. pip's vendored msgpack/pkg_resources), instead of
+# chasing upstream patches for tooling the app never touches.
 RUN rm -rf /usr/local/lib/python3.14/site-packages/pip* \
            /usr/local/lib/python3.14/site-packages/setuptools* \
            /usr/local/lib/python3.14/site-packages/pkg_resources \
+           /usr/local/lib/python3.14/ensurepip \
            /usr/local/bin/pip*
 
 COPY core/ /app/core/

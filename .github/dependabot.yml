@@ -21,7 +21,7 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -72,12 +72,12 @@ updates:
       - "docker"
     open-pull-requests-limit: 2
     ignore:
-      # Python minor bumps (3.14 -> 3.15) must be done manually and in sync
-      # with ci.yml (PYTHON_VERSION) and pyproject.toml (target-version).
+      # Update Python manually in Dockerfile and .python-version together.
       - dependency-name: "python"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
+          - "version-update:semver-patch"
 
   - package-ecosystem: "docker-compose"
     directory: "/"

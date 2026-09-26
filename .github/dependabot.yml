@@ -72,25 +72,8 @@ updates:
       - "docker"
     open-pull-requests-limit: 2
     ignore:
-      # Update Python manually in Dockerfile and .python-version together.
       - dependency-name: "python"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
-
-  - package-ecosystem: "docker-compose"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "UTC"
-    cooldown:
-      default-days: 7
-    commit-message:
-      prefix: "chore(compose)"
-    labels:
-      - "dependencies"
-      - "docker"
-    open-pull-requests-limit: 2

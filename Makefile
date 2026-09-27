@@ -11,7 +11,7 @@ COMPOSE_PROD := -f compose.prod.yaml
 
 COMPOSE_GPU :=
 ifeq ($(GPU),1)
-	COMPOSE_GPU := -f compose.gpu.yaml
+COMPOSE_GPU := -f compose.gpu.yaml
 endif
 
 CMD_DEV  := docker compose $(COMPOSE_BASE) $(COMPOSE_DEV) $(COMPOSE_GPU)
@@ -19,25 +19,21 @@ CMD_PROD := docker compose $(COMPOSE_BASE) $(COMPOSE_PROD) $(COMPOSE_GPU)
 
 ENV ?= dev
 ifeq ($(ENV),prod)
-	CMD_ACTIVE := $(CMD_PROD)
+CMD_ACTIVE := $(CMD_PROD)
 else
-	CMD_ACTIVE := $(CMD_DEV)
+CMD_ACTIVE := $(CMD_DEV)
 endif
 
 SERVICE_APP := app
 VOL_OLLAMA  := ollama
 
-# Same architecture locally and on the GitHub runner.
-# ARM hosts require Docker emulation.
 export CI_PLATFORM ?= linux/amd64
 export CI_DEV_IMAGE ?= lmao:dev-ci
 export CI_IMAGE ?= lmao:ci-local
 
-# Empty locally: Docker still uses its normal local build cache.
-# GitHub Actions supplies GHA cache arguments.
+# GitHub Actions can supply GHA cache arguments. Empty locally.
 BUILDX_CACHE_ARGS ?=
 
-# Shared tool versions. Update centrally.
 ACTIONLINT_IMAGE := rhysd/actionlint:1.7.7
 ZIZMOR_IMAGE     := ghcr.io/zizmorcore/zizmor:1.6.0
 HADOLINT_IMAGE   := hadolint/hadolint:v2.12.0-alpine
@@ -46,9 +42,8 @@ TRIVY_IMAGE      := aquasec/trivy:0.61.1
 
 TRIVY_CACHE_DIR ?= $(HOME)/.cache/lmao/trivy
 
-# auto: online when GH_TOKEN exists, otherwise offline with a warning.
-# online: require GH_TOKEN.
-# offline: explicitly disable online checks.
+# auto: online with GH_TOKEN, otherwise offline with a warning.
+# ci-check explicitly requires online mode.
 WORKFLOW_LINT_MODE ?= auto
 export GH_TOKEN
 
@@ -58,8 +53,10 @@ DOCKER_RUN := docker run --rm --platform "$(CI_PLATFORM)"
 
 .PHONY: help setup dev prod logs shell \
         format format-check lint audit test coverage-html \
-        ci ci-check ci-quality ci-image ci-workflows ci-shellcheck \
-        ci-build-dev ci-build-prod ci-config-check ci-smoke ci-trivy \
+        ci ci-check ci-quality ci-image ci-image-check \
+        ci-workflows ci-shellcheck \
+        ci-build-dev ci-build-prod ci-config-check \
+        ci-smoke ci-smoke-check ci-trivy ci-trivy-check \
         down down-all clean
 
 
@@ -71,7 +68,7 @@ help: ##> Show this help message.
 
 ##@ Setup & Infrastructure
 
-setup: ##> Create required external Docker volumes.
+setup: ##> Create the external Ollama volume.
 	docker volume create "$(VOL_OLLAMA)"
 
 
@@ -94,7 +91,7 @@ shell: ##> Open bash in app (Usage: make shell [ENV=prod]).
 
 ##@ Quality
 
-# GNU Make builds this shared prerequisite once per invocation.
+# A shared prerequisite is built once per make invocation.
 format format-check lint audit test: ci-build-dev
 
 format: ##> Apply Ruff fixes and format local Python files.
@@ -110,21 +107,21 @@ format: ##> Apply Ruff fixes and format local Python files.
 			ruff format --no-cache . || status=$$?; \
 			exit "$$status"'
 
-format-check: ##> Check formatting without modifying local source.
+format-check: ##> Check formatting without changing source files.
 	$(DOCKER_RUN) \
 		--network none \
 		--workdir /app \
 		"$(CI_DEV_IMAGE)" \
 		ruff format --check --no-cache .
 
-lint: ##> Run Ruff without modifying local source.
+lint: ##> Run Ruff without changing source files.
 	$(DOCKER_RUN) \
 		--network none \
 		--workdir /app \
 		"$(CI_DEV_IMAGE)" \
 		ruff check --no-cache --output-format=github .
 
-audit: ##> Audit production dependencies from the current uv.lock.
+audit: ##> Audit locked production dependencies.
 	$(DOCKER_RUN) \
 		--env XDG_CACHE_HOME=/tmp/.cache \
 		--workdir /app \
@@ -145,19 +142,18 @@ test: ##> Run isolated tests and export coverage reports.
 		"$(CI_DEV_IMAGE)" \
 		"$(CURDIR)"
 
-coverage-html: test ##> Run tests and generate HTML coverage.
+coverage-html: test ##> Generate HTML coverage.
 	@echo "Report is available in htmlcov/index.html"
 
 
 ##@ CI Pipelines
 
-ci: ##> Fix and format source, then run every CI check.
+ci: ##> Fix local Python files, then run all CI checks.
 	+$(MAKE) format
 	+$(MAKE) ci-check
-	@echo "Code formatted and all CI checks passed."
-	@echo "Review git diff before committing."
+	@echo "Code formatted and all CI checks passed. Review git diff."
 
-ci-check: ##> Run all server checks locally; requires GH_TOKEN.
+ci-check: ##> Run all server checks locally without fixing source files.
 	+$(MAKE) ci-workflows WORKFLOW_LINT_MODE=online
 	+$(MAKE) ci-quality
 	+$(MAKE) ci-image
@@ -166,8 +162,14 @@ ci-check: ##> Run all server checks locally; requires GH_TOKEN.
 ci-quality: ##> Check formatting, lint, dependencies, and tests.
 	+$(MAKE) --jobs=1 format-check lint audit test
 
-ci-image: ##> Validate, build, smoke-test, and scan production.
-	+$(MAKE) --jobs=1 ci-config-check ci-smoke ci-trivy
+ci-image: ##> Validate configuration, build, and check production image.
+	+$(MAKE) ci-config-check
+	+$(MAKE) ci-build-prod
+	+$(MAKE) ci-image-check
+
+ci-image-check: ##> Smoke-test and scan existing CI_IMAGE without rebuilding.
+	+$(MAKE) ci-smoke-check
+	+$(MAKE) ci-trivy-check
 
 
 ##@ CI Building Blocks
@@ -205,7 +207,7 @@ ci-shellcheck: ##> Check CI shell scripts with ShellCheck.
 		"$(SHELLCHECK_IMAGE)" \
 		scripts/ci/*.sh
 
-ci-workflows: ci-shellcheck ##> Check workflows and scripts; offline fallback allowed.
+ci-workflows: ci-shellcheck ##> Check workflows and CI scripts.
 	@shopt -s nullglob; \
 	files=(.github/workflows/*.yml .github/workflows/*.yaml); \
 	if [[ $${#files[@]} -eq 0 ]]; then \
@@ -232,7 +234,6 @@ ci-workflows: ci-shellcheck ##> Check workflows and scripts; offline fallback al
 		online) \
 			if [[ -z "$${GH_TOKEN:-}" ]]; then \
 				echo "GH_TOKEN is required for full online workflow checks." >&2; \
-				echo "For offline-only checks, run: make ci-workflows" >&2; \
 				exit 1; \
 			fi; \
 			docker_args+=(--env GH_TOKEN); \
@@ -256,7 +257,7 @@ ci-workflows: ci-shellcheck ##> Check workflows and scripts; offline fallback al
 		--format=github \
 		.github/workflows/
 
-ci-config-check: ##> Lint Dockerfile and validate all Compose combinations.
+ci-config-check: ##> Lint Dockerfile and validate Compose configurations.
 	$(DOCKER_RUN) \
 		--network none \
 		--volume "$(CURDIR):/repo:ro" \
@@ -280,15 +281,21 @@ ci-config-check: ##> Lint Dockerfile and validate all Compose combinations.
 		done; \
 	done
 
-# Built once when both targets are invoked by ci-image.
-ci-smoke ci-trivy: ci-build-prod
+# Convenience commands build first. The *-check targets below never build.
+ci-smoke: ##> Build and smoke-test the production image.
+	+$(MAKE) ci-build-prod
+	+$(MAKE) ci-smoke-check
 
-ci-smoke: ##> Check production HEALTHCHECK and non-root execution.
+ci-trivy: ##> Build and scan the production image.
+	+$(MAKE) ci-build-prod
+	+$(MAKE) ci-trivy-check
+
+ci-smoke-check: ##> Smoke-test existing CI_IMAGE and verify non-root execution.
 	bash scripts/ci/smoke-test.sh \
 		"$(CI_PLATFORM)" \
 		"$(CI_IMAGE)"
 
-ci-trivy: ##> Scan production for fixable HIGH/CRITICAL vulnerabilities.
+ci-trivy-check: ##> Scan existing CI_IMAGE with Trivy.
 	bash scripts/ci/scan-image.sh \
 		"$(CI_PLATFORM)" \
 		"$(CI_IMAGE)" \
@@ -306,7 +313,7 @@ down-all: ##> Stop containers using both Compose configurations.
 	$(CMD_DEV) down --remove-orphans
 	$(CMD_PROD) down --remove-orphans
 
-clean: ##> Remove containers, Compose volumes, and Python reports/caches.
+clean: ##> Remove containers, Compose volumes, and generated reports/caches.
 	@echo "WARNING: Compose-managed volumes, including history_data, will be removed."
 	@echo "The external Ollama volume is preserved."
 	$(CMD_DEV) down -v --remove-orphans

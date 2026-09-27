@@ -42,6 +42,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate release image-check target
+        run: |
+          set -euo pipefail
+          make -n ci-image-check > /dev/null
+
       - name: Compute image names
         id: image
         run: |

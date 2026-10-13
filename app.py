@@ -14,6 +14,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request
+from werkzeug.utils import secure_filename
 
 from core.evaluator import EvaluationPipeline
 from core.ollama_client import OllamaClient
@@ -230,7 +231,11 @@ def get_results(task_id: str):
     Returns:
         Response: A JSON object containing the formatted results and metrics.
     """
-    history_dir = os.path.join("history", task_id)
+    safe_task_id = secure_filename(task_id)
+    if not safe_task_id or safe_task_id != task_id:
+        return jsonify({"error": "Invalid task_id"}), 400
+
+    history_dir = os.path.join("history", safe_task_id)
     metrics_path = os.path.join(history_dir, "technical_metrics.json")
     results_path = os.path.join(history_dir, "evaluation_results.json")
 
@@ -276,7 +281,7 @@ def get_results(task_id: str):
 
     return jsonify(
         {
-            "task_id": task_id,
+            "task_id": safe_task_id,
             "final_summary": results_data.get(
                 "final_summary", "Summary not available."
             ),

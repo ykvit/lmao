@@ -4,7 +4,7 @@
 # as environment variables.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 
 log() {
     printf '==> %s\n' "$*" >&2

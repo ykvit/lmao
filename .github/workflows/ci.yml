@@ -21,8 +21,8 @@ env:
   CI_IMAGE: lmao:ci-${{ github.sha }}
 
 jobs:
-  lint-workflows:
-    name: Lint Workflows & CI Scripts
+  check-workflows:
+    name: Check workflows
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -32,13 +32,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check workflows and CI scripts
+      - name: make check-workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make ci-workflows WORKFLOW_LINT_MODE=online
+        run: make check-workflows
 
-  lint-and-test:
-    name: Lint, Audit & Test
+  check-code:
+    name: Check code
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
@@ -48,38 +48,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Set up Docker
+        uses: ./.github/actions/setup-docker
 
-      - name: Expose GitHub cache runtime
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const names = [
-              "ACTIONS_RUNTIME_TOKEN",
-              "ACTIONS_RESULTS_URL",
-            ];
-
-            for (const name of names) {
-              const value = process.env[name];
-
-              if (!value) {
-                throw new Error(`Missing GitHub cache variable: ${name}`);
-              }
-
-              if (name === "ACTIONS_RUNTIME_TOKEN") {
-                core.setSecret(value);
-              }
-
-              core.exportVariable(name, value);
-            }
-
-      - name: Check formatting, lint, dependencies, and tests
-        env:
-          BUILDX_CACHE_ARGS: >-
-            --cache-from=type=gha,version=2,scope=lmao-dev
-            --cache-to=type=gha,version=2,scope=lmao-dev,mode=max
-        run: make ci-quality
+      - name: make check-code
+        run: make check-code
 
       - name: Upload coverage report
         if: always()
@@ -92,8 +65,8 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  docker-build:
-    name: Build, Scan & Smoke-test Image
+  check-image:
+    name: Check image
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -103,31 +76,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Expose GitHub cache runtime
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const names = [
-              "ACTIONS_RUNTIME_TOKEN",
-              "ACTIONS_RESULTS_URL",
-            ];
-
-            for (const name of names) {
-              const value = process.env[name];
-
-              if (!value) {
-                throw new Error(`Missing GitHub cache variable: ${name}`);
-              }
-
-              if (name === "ACTIONS_RUNTIME_TOKEN") {
-                core.setSecret(value);
-              }
-
-              core.exportVariable(name, value);
-            }
+      - name: Set up Docker
+        uses: ./.github/actions/setup-docker
 
       - name: Set Trivy cache date
         id: cache-date
@@ -141,10 +91,7 @@ jobs:
           restore-keys: |
             trivy-v1-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Validate, build, smoke-test, and scan
+      - name: make check-image
         env:
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
-          BUILDX_CACHE_ARGS: >-
-            --cache-from=type=gha,version=2,scope=lmao-production
-            --cache-to=type=gha,version=2,scope=lmao-production,mode=max,ignore-error=true
-        run: make ci-image
+        run: make check-image

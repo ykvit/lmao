@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
+# Run tests inside the dev image without network access,
+# then copy coverage reports (coverage.xml, htmlcov/) to the repo root.
 set -Eeuo pipefail
+# shellcheck source=../lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
-platform="${1:?Usage: run-tests.sh PLATFORM IMAGE OUTPUT_DIR}"
-image="${2:?Missing IMAGE}"
-output_dir="${3:?Missing OUTPUT_DIR}"
+require_env CI_PLATFORM CI_DEV_IMAGE
 
 container=""
 
@@ -24,20 +26,19 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # Remove old reports so a failed run cannot leave misleading results.
-mkdir -p "$output_dir"
-rm -f -- "$output_dir/coverage.xml" "$output_dir/.coverage"
-rm -rf -- "$output_dir/htmlcov"
+rm -f -- coverage.xml .coverage
+rm -rf -- htmlcov
 
 container="$(
     docker create \
-        --platform "$platform" \
+        --platform "$CI_PLATFORM" \
         --network none \
         --env PYTHON_DOTENV_DISABLED=1 \
         --env FLASK_DEBUG=0 \
         --env OLLAMA_BASE_URL=http://127.0.0.1:11434 \
         --env COVERAGE_FILE=/tmp/ci-reports/.coverage \
         --workdir /app \
-        "$image" \
+        "$CI_DEV_IMAGE" \
         sh -ec '
             mkdir -p /tmp/ci-reports
             pytest \
@@ -50,12 +51,11 @@ container="$(
 run_status=0
 docker start --attach "$container" || run_status=$?
 
-test_status="$(
-    docker inspect --format '{{.State.ExitCode}}' "$container"
-)"
+test_status="$(docker inspect --format '{{.State.ExitCode}}' "$container")"
 
-# Without -a, docker cp creates destination files for the invoking user.
-docker cp "$container:/tmp/ci-reports/." "$output_dir/"
+# Without -a, docker cp creates files owned by the invoking user.
+docker cp "$container:/tmp/ci-reports/." . \
+    || warn "No coverage reports were produced."
 
 if [[ "$run_status" != 0 ]]; then
     exit "$run_status"

@@ -14,8 +14,8 @@ case "${1:-}" in
 esac
 
 if [[ "$remove_volumes" == 1 ]]; then
-    warn "Removing containers and Compose volumes, including evaluation history."
-    log "The external Ollama volume (models) is preserved."
+    warn "Removing containers and Compose volumes, including prod evaluation history."
+    log "Preserved: the external Ollama volume (models) and ./history (dev history)."
 
     for env in dev prod; do
         docker compose \

@@ -28,6 +28,7 @@ setup:
 	@docker volume create ollama >/dev/null
 
 dev: setup ##> Start DEV with hot reload (make dev [GPU=1]).
+	@mkdir -p history
 	$(CMD_DEV) up --build -d
 	@echo "App is running at http://localhost:5000"
 
@@ -60,7 +61,7 @@ format: build-dev ##> Fix and format Python files (changes source!).
 clean: ##> Remove reports and caches.
 	scripts/dev/clean.sh
 
-reset: ##> Clean + remove containers and volumes (deletes history!).
+reset: ##> Clean + remove containers and volumes (deletes prod history!).
 	scripts/dev/clean.sh --volumes
 
 

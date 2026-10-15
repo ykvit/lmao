@@ -1,8 +1,10 @@
 FROM python:3.14.7-slim AS base
 
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* \
-    && python3 -m pip uninstall -y pip setuptools wheel 2>/dev/null || true
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && (python3 -m pip uninstall -y pip setuptools wheel 2>/dev/null || true)
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

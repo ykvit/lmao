@@ -6,7 +6,7 @@ A web application for benchmarking local LLMs with [Ollama](https://ollama.com).
 
 - Dashboard for configuring evaluations and viewing results.
 - Live progress updates via Server-Sent Events.
-- Evaluation history stored in a Docker volume.
+- Persistent evaluation history.
 - Sequential model unloading to reduce VRAM usage.
 
 ## Quick start
@@ -32,27 +32,40 @@ Run the command for each model. To stop the environment:
 make down ENV=prod
 ```
 
+Run `make help` to list all commands.
+
 ## Development
 
 ```bash
-make dev           # Development server with hot reload
-make dev GPU=1     # Development with NVIDIA GPU
-make logs          # Follow development logs
-make test          # Run tests with coverage
+make dev           # Development server with hot reload (GPU=1 for NVIDIA)
+make logs          # Follow logs
+make shell         # Open bash in the app container
+make down          # Stop the environment
 ```
+
+Development history is stored in `./history`; production history is stored in a Docker volume.
 
 ### Quality checks
 
 Tools and scanners run through Docker; they do not need to be installed on the host.
 
 ```bash
-GH_TOKEN="$(gh auth token)" make ci        # Fix formatting, then run all checks
-GH_TOKEN="$(gh auth token)" make ci-check  # Run checks without fixing source
+make format                           # Fix formatting (changes files)
+make test                             # Run tests with coverage
+make check                            # Run all checks, no token needed
+GH_TOKEN="$(gh auth token)" make ci   # Run exactly what GitHub CI runs
 ```
 
-Provide `GH_TOKEN` through your environment if you do not use GitHub CLI. `make ci-check` mirrors the CI checks: workflow and shell linting, Ruff, dependency audit, tests, Docker validation, smoke test, and Trivy scan. It may generate coverage reports but does not automatically fix source files.
+Checks never modify source files. `make check` runs zizmor offline; `make ci` adds online workflow audits and requires `GH_TOKEN`. Trivy uses a daily vulnerability database, so an image can start failing without code changes.
 
-`make ci` changes Python files. Review `git diff` before committing.
+### Cleanup
+
+```bash
+make clean         # Remove reports and caches
+make reset         # Also remove containers and volumes, including production history
+```
+
+Ollama models and `./history` are preserved.
 
 ### Running without Docker
 
@@ -67,8 +80,8 @@ For a custom Ollama URL, copy `.env.example` to `.env` and edit `OLLAMA_BASE_URL
 
 ## CI and releases
 
-GitHub Actions runs the same Makefile check targets. Version tags matching `v*.*.*` trigger a CI gate followed by image verification and publication to GHCR. Dependabot monitors GitHub Actions, uv, and Docker dependencies.
+Each GitHub Actions job runs one make target: `check-workflows`, `check-code`, or `check-image`. Version tags matching `v*.*.*` run CI, then build a candidate image, verify it with `make test-image`, and publish it to GHCR. Dependabot monitors GitHub Actions, uv, and Docker dependencies.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)

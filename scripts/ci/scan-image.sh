@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
+# Scan CI_IMAGE with Trivy. Fails on fixable HIGH/CRITICAL vulnerabilities.
 set -Eeuo pipefail
+# shellcheck source=../lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
-platform="${1:?Usage: scan-image.sh PLATFORM IMAGE TRIVY_IMAGE CACHE_DIR REPO_DIR}"
-image="${2:?Missing IMAGE}"
-trivy_image="${3:?Missing TRIVY_IMAGE}"
-cache_dir="${4:?Missing CACHE_DIR}"
-repo_dir="${5:?Missing REPO_DIR}"
+require_env CI_IMAGE TRIVY_IMAGE TRIVY_CACHE_DIR
 
 temporary_dir="$(mktemp -d)"
 
+# shellcheck disable=SC2317
 cleanup() {
     local status=$?
     trap - EXIT
@@ -20,22 +20,21 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$cache_dir"
+mkdir -p "$TRIVY_CACHE_DIR"
 
-docker image save \
-    --output "$temporary_dir/image.tar" \
-    "$image"
+log "Exporting $CI_IMAGE"
+docker image save --output "$temporary_dir/image.tar" "$CI_IMAGE"
 
+log "Scanning with Trivy"
 docker run --rm \
-    --platform "$platform" \
     --user "$(id -u):$(id -g)" \
     --env HOME=/tmp \
     --volume "$temporary_dir:/scan:ro" \
-    --volume "$cache_dir:/cache" \
-    --volume "$repo_dir:/repo:ro" \
+    --volume "$TRIVY_CACHE_DIR:/cache" \
+    --volume "$REPO_ROOT:/repo:ro" \
     --workdir /repo \
     --entrypoint trivy \
-    "$trivy_image" \
+    "$TRIVY_IMAGE" \
     image \
     --cache-dir /cache \
     --input /scan/image.tar \

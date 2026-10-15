@@ -1,4 +1,4 @@
-FROM python:3.14.7-slim AS base
+FROM python:3.14.8-slim AS base
 
 # hadolint ignore=DL3008
 RUN apt-get update \

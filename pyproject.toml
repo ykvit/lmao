@@ -25,8 +25,7 @@ package = false
 [tool.ruff]
 # Set the maximum line length to 88 (matching Black's default)
 line-length = 88
-# Target Python version matching the Dockerfile (Python 3.14)
-target-version = "py314"
+# target-version is inferred from project.requires-python
 
 [tool.ruff.lint]
 # E, W - pycodestyle; F - Pyflakes; I - isort

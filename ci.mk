@@ -18,7 +18,7 @@ export TRIVY_IMAGE      := aquasec/trivy:0.61.1
 
 .PHONY: check ci \
         check-workflows check-code check-image test-image \
-        lint-python lint-shell lint-docker audit test \
+        check-python lint-python lint-shell lint-docker audit test \
         build-dev build-prod smoke-test scan-image
 
 
@@ -36,7 +36,10 @@ ci: check ##> Exactly what GitHub CI runs (needs GH_TOKEN).
 check-workflows: ##> Lint GitHub workflows (actionlint, zizmor).
 	scripts/ci/lint-workflows.sh
 
-check-code: lint-shell lint-python audit test ##> Lint Python and shell, audit deps, run tests.
+check-code: check-python lint-shell lint-python audit test ##> Check Python version, lint, audit, run tests.
+
+check-python: ##> Dockerfile and requires-python agree on Python version.
+	scripts/ci/check-python.sh
 
 check-image: lint-docker build-prod test-image ##> Lint Docker config, build and test prod image.
 

@@ -69,6 +69,7 @@ Ollama models and `./history` are preserved.
 
 ### Running without Docker
 
+To change the Python version, update the `FROM python:` line in the `Dockerfile` and `requires-python` in `pyproject.toml` together; `make check-python` verifies they agree.
 Requires [uv](https://docs.astral.sh/uv/), and a running Ollama instance:
 
 ```bash
@@ -80,7 +81,23 @@ For a custom Ollama URL, copy `.env.example` to `.env` and edit `OLLAMA_BASE_URL
 
 ## CI and releases
 
-Each GitHub Actions job runs one make target: `check-workflows`, `check-code`, or `check-image`. Version tags matching `v*.*.*` run CI, then build a candidate image, verify it with `make test-image`, and publish it to GHCR. Dependabot monitors GitHub Actions, uv, and Docker dependencies.
+Pull requests run `check-workflows`, `check-code` and `check-image`, one make target per job. A push to `main` runs the Release workflow: it repeats the code checks, builds the production image once, and tests that exact image (smoke test and Trivy scan).
+
+A release happens when `version` in `pyproject.toml` has no git tag yet. The tested image is then copied to GHCR with the same digest and attested, and the GitHub Release creates the tag `vX.Y.Z`. A push without a version change publishes nothing.
+
+### Releasing
+
+```bash
+git switch -c chore/bump-X.Y.Z
+make bump PART=patch        # patch | minor | major
+git commit -am "chore: bump version to X.Y.Z"
+```
+
+Open a PR and merge it. Merging a version bump releases that version, so keep it separate from other changes. `make release-plan` shows which tag the current version would publish.
+
+Prereleases use `make bump PART="patch rc"` (`1.2.3rc1` is published as `v1.2.3-rc.1`) and get only their exact image tag, without floating major or minor tags. `make bump PART=stable` turns a prerelease into the final version.
+
+Dependabot monitors GitHub Actions, uv, Docker images, and the CI tool images in `docker/tools.Dockerfile`.
 
 ## License
 

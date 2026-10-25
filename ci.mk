@@ -10,11 +10,16 @@ export GH_TOKEN
 # locally only through `make ci`.
 export ZIZMOR_ONLINE ?= $(if $(CI),1,0)
 
-export ACTIONLINT_IMAGE := rhysd/actionlint:1.7.7
-export ZIZMOR_IMAGE     := ghcr.io/zizmorcore/zizmor:1.6.0
-export HADOLINT_IMAGE   := hadolint/hadolint:v2.12.0-alpine
-export SHELLCHECK_IMAGE := koalaman/shellcheck:v0.10.0
-export TRIVY_IMAGE      := aquasec/trivy:0.61.1
+# Tool images live in docker/tools.Dockerfile (single source of truth,
+# tracked by Dependabot). `$(call tool_image,NAME)` reads `FROM <image> AS NAME`.
+TOOLS_FILE := docker/tools.Dockerfile
+tool_image = $(or $(shell sed -nE 's/^FROM[[:space:]]+([^[:space:]]+)[[:space:]]+AS[[:space:]]+$(1)[[:space:]]*$$/\1/p' $(TOOLS_FILE)),$(error No image named '$(1)' in $(TOOLS_FILE)))
+
+export ACTIONLINT_IMAGE  := $(call tool_image,actionlint)
+export ZIZMOR_IMAGE      := $(call tool_image,zizmor)
+export HADOLINT_IMAGE    := $(call tool_image,hadolint)
+export SHELLCHECK_IMAGE  := $(call tool_image,shellcheck)
+export TRIVY_IMAGE       := $(call tool_image,trivy)
 
 .PHONY: check ci \
         check-workflows check-code check-image test-image \

@@ -1,10 +1,11 @@
-FROM python:3.14.8-slim AS base
+FROM ghcr.io/astral-sh/uv:0.9.0@sha256:8f926a80debadba6f18442030df316c0e2b28d6af62d1292fb44b1c874173dc0 AS uv
 
-# hadolint ignore=DL3008
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/* \
-    && (python3 -m pip uninstall -y pip setuptools wheel 2>/dev/null || true)
+
+FROM python:3.14.8-slim@sha256:fbecd461fc72d21b2143c6eaba25143738079154a6d0ea3da3aec724f50eed4a AS base
+
+# No apt-get upgrade: OS patches arrive via base image bumps (Dependabot),
+# which keeps this layer reproducible.
+RUN (python3 -m pip uninstall -y pip setuptools wheel 2>/dev/null || true)
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -15,15 +16,12 @@ WORKDIR /app
 
 FROM base AS deps
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.0 /uv /uvx /bin/
+COPY --from=uv /uv /uvx /bin/
 
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
+# UV_NO_BUILD: fail instead of compiling, so no compiler is needed in the image.
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_NO_BUILD=1
 
 COPY pyproject.toml uv.lock ./
 

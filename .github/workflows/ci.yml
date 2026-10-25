@@ -1,12 +1,15 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      skip-image:
+        description: Skip the image build and scan; the caller builds and verifies it.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,7 +19,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  CI_PLATFORM: linux/amd64
   CI_DEV_IMAGE: lmao:dev-ci-${{ github.sha }}
   CI_IMAGE: lmao:ci-${{ github.sha }}
 
@@ -67,6 +69,8 @@ jobs:
 
   check-image:
     name: Check image
+    # inputs is empty outside workflow_call, so this is true on PRs.
+    if: ${{ !inputs.skip-image }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 

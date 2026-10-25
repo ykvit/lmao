@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
-require_env CI_PLATFORM CI_DEV_IMAGE
+require_env CI_DEV_IMAGE
 
 container=""
 
@@ -31,7 +31,6 @@ rm -rf -- htmlcov
 
 container="$(
     docker create \
-        --platform "$CI_PLATFORM" \
         --network none \
         --env PYTHON_DOTENV_DISABLED=1 \
         --env FLASK_DEBUG=0 \

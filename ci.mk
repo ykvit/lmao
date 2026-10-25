@@ -1,6 +1,5 @@
 # Checks. Everything .github/workflows/ci.yml runs is defined here.
 
-export CI_PLATFORM     ?= linux/amd64
 export CI_DEV_IMAGE    ?= lmao:dev-ci
 export CI_IMAGE        ?= lmao:ci-local
 export TRIVY_CACHE_DIR ?= $(HOME)/.cache/lmao/trivy
@@ -20,6 +19,7 @@ export ZIZMOR_IMAGE      := $(call tool_image,zizmor)
 export HADOLINT_IMAGE    := $(call tool_image,hadolint)
 export SHELLCHECK_IMAGE  := $(call tool_image,shellcheck)
 export TRIVY_IMAGE       := $(call tool_image,trivy)
+export REGISTRY_IMAGE := $(call tool_image,registry)
 
 .PHONY: check ci \
         check-workflows check-code check-image test-image \
@@ -81,3 +81,6 @@ smoke-test: ##> Smoke-test CI_IMAGE.
 
 scan-image: ##> Scan CI_IMAGE for vulnerabilities.
 	scripts/ci/scan-image.sh
+
+print-%:
+	@printf '%s\n' '$($*)'

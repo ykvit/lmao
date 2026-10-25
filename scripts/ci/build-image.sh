@@ -8,7 +8,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 target="${1:?Usage: build-image.sh dev|production TAG}"
 tag="${2:?Usage: build-image.sh dev|production TAG}"
 
-require_env CI_PLATFORM
 
 cache_args=()
 
@@ -24,7 +23,6 @@ log "Building target '$target' as $tag"
 
 docker buildx build \
     ${cache_args[@]+"${cache_args[@]}"} \
-    --platform "$CI_PLATFORM" \
     --target "$target" \
     --tag "$tag" \
     --pull \

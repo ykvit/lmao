@@ -12,7 +12,7 @@ CMD_DEV     := docker compose -f compose.base.yaml -f compose.dev.yaml $(COMPOSE
 CMD_PROD    := docker compose -f compose.base.yaml -f compose.prod.yaml $(COMPOSE_GPU)
 CMD_ACTIVE  := $(if $(filter prod,$(ENV)),$(CMD_PROD),$(CMD_DEV))
 
-.PHONY: help setup dev prod logs shell down down-all format clean reset
+.PHONY: help setup dev prod logs shell down down-all format clean reset bump release-plan
 
 
 ##@ General
@@ -64,5 +64,12 @@ clean: ##> Remove reports and caches.
 reset: ##> Clean + remove containers and volumes (deletes prod history!).
 	scripts/dev/clean.sh --volumes
 
+##@ Release
+
+bump: build-dev ##> Bump version (make bump PART=patch|minor|major).
+	scripts/dev/bump.sh $(PART)
+
+release-plan: ##> Show the tag the current version would release.
+	scripts/release/plan.sh
 
 include ci.mk

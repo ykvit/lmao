@@ -8,7 +8,7 @@ require_env CI_IMAGE
 
 container=""
 
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     local status=$?
     trap - EXIT

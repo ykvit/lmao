@@ -64,7 +64,7 @@ jobs:
         run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker
-        uses: ./.github/actions/setup-docker
+        uses: ./.github/actions/setup-docker # zizmor: ignore[self-repository]
         with:
           # Lets BuildKit push to the staging registry on the runner.
           driver-opts: network=host

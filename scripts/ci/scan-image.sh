@@ -8,7 +8,7 @@ require_env CI_IMAGE TRIVY_IMAGE TRIVY_CACHE_DIR
 
 temporary_dir="$(mktemp -d)"
 
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     local status=$?
     trap - EXIT

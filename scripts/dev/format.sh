@@ -4,10 +4,9 @@ set -Eeuo pipefail
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
-require_env CI_PLATFORM CI_DEV_IMAGE
+require_env CI_DEV_IMAGE
 
 docker run --rm \
-    --platform "$CI_PLATFORM" \
     --network none \
     --user "$(id -u):$(id -g)" \
     --volume "$REPO_ROOT:/app" \

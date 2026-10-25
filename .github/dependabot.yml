@@ -2,7 +2,10 @@ version: 2
 
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" covers .github/workflows; the glob covers composite actions.
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -56,6 +59,7 @@ updates:
           - "minor"
           - "patch"
 
+  # Runtime images: ./Dockerfile (python, uv).
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
@@ -76,3 +80,24 @@ updates:
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
+
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(ci-tools)"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "ci-tools"
+    open-pull-requests-limit: 3
+    groups:
+      ci-tools:
+        patterns:
+          - "*"

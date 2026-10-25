@@ -69,7 +69,7 @@ Ollama models and `./history` are preserved.
 
 ### Running without Docker
 
-Requires Python 3.14, [uv](https://docs.astral.sh/uv/), and a running Ollama instance:
+Requires [uv](https://docs.astral.sh/uv/), and a running Ollama instance:
 
 ```bash
 uv sync --locked

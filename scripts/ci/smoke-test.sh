@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
-require_env CI_PLATFORM CI_IMAGE
+require_env CI_IMAGE
 
 container=""
 
@@ -35,7 +35,6 @@ log "Starting $CI_IMAGE"
 
 container="$(
     docker run --detach \
-        --platform "$CI_PLATFORM" \
         --health-interval=2s \
         --health-timeout=3s \
         --health-start-period=5s \

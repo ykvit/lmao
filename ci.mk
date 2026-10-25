@@ -1,6 +1,5 @@
 # Checks. Everything .github/workflows/ci.yml runs is defined here.
 
-export CI_PLATFORM     ?= linux/amd64
 export CI_DEV_IMAGE    ?= lmao:dev-ci
 export CI_IMAGE        ?= lmao:ci-local
 export TRIVY_CACHE_DIR ?= $(HOME)/.cache/lmao/trivy
@@ -10,15 +9,21 @@ export GH_TOKEN
 # locally only through `make ci`.
 export ZIZMOR_ONLINE ?= $(if $(CI),1,0)
 
-export ACTIONLINT_IMAGE := rhysd/actionlint:1.7.7
-export ZIZMOR_IMAGE     := ghcr.io/zizmorcore/zizmor:1.6.0
-export HADOLINT_IMAGE   := hadolint/hadolint:v2.12.0-alpine
-export SHELLCHECK_IMAGE := koalaman/shellcheck:v0.10.0
-export TRIVY_IMAGE      := aquasec/trivy:0.61.1
+# Tool images live in docker/tools.Dockerfile (single source of truth,
+# tracked by Dependabot). `$(call tool_image,NAME)` reads `FROM <image> AS NAME`.
+TOOLS_FILE := docker/tools.Dockerfile
+tool_image = $(or $(shell sed -nE 's/^FROM[[:space:]]+([^[:space:]]+)[[:space:]]+AS[[:space:]]+$(1)[[:space:]]*$$/\1/p' $(TOOLS_FILE)),$(error No image named '$(1)' in $(TOOLS_FILE)))
+
+export ACTIONLINT_IMAGE  := $(call tool_image,actionlint)
+export ZIZMOR_IMAGE      := $(call tool_image,zizmor)
+export HADOLINT_IMAGE    := $(call tool_image,hadolint)
+export SHELLCHECK_IMAGE  := $(call tool_image,shellcheck)
+export TRIVY_IMAGE       := $(call tool_image,trivy)
+export REGISTRY_IMAGE := $(call tool_image,registry)
 
 .PHONY: check ci \
         check-workflows check-code check-image test-image \
-        lint-python lint-shell lint-docker audit test \
+        check-python lint-python lint-shell lint-docker audit test \
         build-dev build-prod smoke-test scan-image
 
 
@@ -36,7 +41,10 @@ ci: check ##> Exactly what GitHub CI runs (needs GH_TOKEN).
 check-workflows: ##> Lint GitHub workflows (actionlint, zizmor).
 	scripts/ci/lint-workflows.sh
 
-check-code: lint-shell lint-python audit test ##> Lint Python and shell, audit deps, run tests.
+check-code: check-python lint-shell lint-python audit test ##> Check Python version, lint, audit, run tests.
+
+check-python: ##> Dockerfile and requires-python agree on Python version.
+	scripts/ci/check-python.sh
 
 check-image: lint-docker build-prod test-image ##> Lint Docker config, build and test prod image.
 
@@ -73,3 +81,6 @@ smoke-test: ##> Smoke-test CI_IMAGE.
 
 scan-image: ##> Scan CI_IMAGE for vulnerabilities.
 	scripts/ci/scan-image.sh
+
+print-%:
+	@printf '%s\n' '$($*)'

@@ -86,8 +86,8 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=semver,pattern={{version}},value=${{ steps.plan.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.plan.outputs.tag }}
-            type=semver,pattern={{major}},value=${{ steps.plan.outputs.tag }},enable=${{ !startsWith(steps.plan.outputs.tag, 'v0.') }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.plan.outputs.tag }},enable=${{ !contains(steps.plan.outputs.tag, '-') }}
+            type=semver,pattern={{major}},value=${{ steps.plan.outputs.tag }},enable=${{ !contains(steps.plan.outputs.tag, '-') && !startsWith(steps.plan.outputs.tag, 'v0.') }}
 
       # Built once. Everything below tests and publishes this digest.
       - name: Build candidate

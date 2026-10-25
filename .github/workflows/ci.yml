@@ -51,7 +51,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Docker
-        uses: ./.github/actions/setup-docker
+        uses: ./.github/actions/setup-docker # zizmor: ignore[self-repository]
 
       - name: make check-code
         run: make check-code
@@ -81,7 +81,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Docker
-        uses: ./.github/actions/setup-docker
+        uses: ./.github/actions/setup-docker # zizmor: ignore[self-repository]
 
       - name: Set Trivy cache date
         id: cache-date

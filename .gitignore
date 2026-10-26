@@ -219,3 +219,6 @@ __marimo__/
 
 # history
 history/*
+
+# CI reports
+reports/

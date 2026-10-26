@@ -85,6 +85,8 @@ Pull requests run `check-workflows`, `check-code` and `check-image`, one make ta
 
 A release happens when `version` in `pyproject.toml` has no git tag yet. The tested image is then copied to GHCR with the same digest and attested, and the GitHub Release creates the tag `vX.Y.Z`. A push without a version change publishes nothing.
 
+A separate Security workflow runs daily (and on demand): `pip-audit` for locked dependencies, Trivy for the published `latest` and current minor image tags, and an online zizmor audit. Trivy and zizmor results are uploaded to Code scanning. GitHub disables scheduled workflows in a public repository after 60 days without repository activity (Dependabot merges do not count); re-enable it in the Actions tab if that happens. Run the checks locally with `make audit` and `make scan-published`.
+
 ### Releasing
 
 ```bash

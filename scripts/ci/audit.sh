@@ -12,11 +12,11 @@ docker run --rm \
     "$CI_DEV_IMAGE" \
     sh -ec '
         uv export \
+            --quiet \
             --locked \
             --no-dev \
             --no-emit-project \
-            --no-hashes \
             --format requirements-txt \
             --output-file /tmp/requirements-audit.txt
-        pip-audit --no-deps -r /tmp/requirements-audit.txt
+        pip-audit --require-hashes -r /tmp/requirements-audit.txt
     '

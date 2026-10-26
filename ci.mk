@@ -19,12 +19,16 @@ export ZIZMOR_IMAGE      := $(call tool_image,zizmor)
 export HADOLINT_IMAGE    := $(call tool_image,hadolint)
 export SHELLCHECK_IMAGE  := $(call tool_image,shellcheck)
 export TRIVY_IMAGE       := $(call tool_image,trivy)
-export REGISTRY_IMAGE := $(call tool_image,registry)
+export REGISTRY_IMAGE    := $(call tool_image,registry)
+
+# Published image scanned by `make scan-published`. Override for forks.
+export PUBLISHED_IMAGE   ?= ghcr.io/ykvit/lmao
 
 .PHONY: check ci \
         check-workflows check-code check-image test-image \
         check-python lint-python lint-shell lint-docker audit test \
-        build-dev build-prod smoke-test scan-image
+        build-dev build-prod smoke-test scan-image \
+        scan-published zizmor-sarif
 
 
 ##@ Checks
@@ -81,6 +85,14 @@ smoke-test: ##> Smoke-test CI_IMAGE.
 
 scan-image: ##> Scan CI_IMAGE for vulnerabilities.
 	scripts/ci/scan-image.sh
+
+##@ Scheduled security
+
+scan-published: ##> Scan the published image (latest + current X.Y) with Trivy.
+	scripts/ci/scan-published.sh
+
+zizmor-sarif: ##> Online zizmor audit as SARIF (needs GH_TOKEN, SARIF_FILE).
+	scripts/ci/zizmor-sarif.sh
 
 print-%:
 	@printf '%s\n' '$($*)'

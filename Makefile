@@ -8,11 +8,11 @@ export UID := $(shell id -u)
 export GID := $(shell id -g)
 
 COMPOSE_GPU := $(if $(filter 1,$(GPU)),-f compose.gpu.yaml)
-CMD_DEV     := docker compose -f compose.base.yaml -f compose.dev.yaml $(COMPOSE_GPU)
-CMD_PROD    := docker compose -f compose.base.yaml -f compose.prod.yaml $(COMPOSE_GPU)
+CMD_DEV     := docker compose -f compose.yaml -f compose.dev.yaml $(COMPOSE_GPU)
+CMD_PROD    := docker compose -f compose.yaml -f compose.prod.yaml $(COMPOSE_GPU)
 CMD_ACTIVE  := $(if $(filter prod,$(ENV)),$(CMD_PROD),$(CMD_DEV))
 
-.PHONY: help setup dev prod logs shell down down-all format clean reset bump release-plan
+.PHONY: help models-volume dev prod logs shell down down-all format clean reset bump release-plan
 
 
 ##@ General
@@ -23,18 +23,19 @@ help: ##> Show this help message.
 
 ##@ Environment
 
-# Internal: dev and prod call it automatically.
-setup:
-	@docker volume create ollama >/dev/null
+# Internal: the models volume is external, so Compose does not create it.
+models-volume:
+	@docker volume inspect ollama >/dev/null 2>&1 || docker volume create ollama >/dev/null
 
-dev: setup ##> Start DEV with hot reload (make dev [GPU=1]).
-	@mkdir -p history
+dev: models-volume ##> Start DEV with hot reload on port 5000 (make dev [GPU=1]).
+	@test -z "$$($(CMD_PROD) ps -q)" || { echo "prod is running: run 'make down ENV=prod' first (dev and prod share the models volume and the GPU)." >&2; exit 1; }
 	$(CMD_DEV) up --build -d
 	@echo "App is running at http://localhost:5000"
 
-prod: setup ##> Start PROD locally (make prod [GPU=1]).
+prod: models-volume ##> Start PROD locally on port 5001 (make prod [GPU=1]).
+	@test -z "$$($(CMD_DEV) ps -q)" || { echo "dev is running: run 'make down' first (dev and prod share the models volume and the GPU)." >&2; exit 1; }
 	$(CMD_PROD) up --build -d
-	@echo "App is running at http://localhost:5000"
+	@echo "App is running at http://localhost:5001"
 
 logs: ##> Follow logs (make logs [ENV=prod]).
 	$(CMD_ACTIVE) logs -f
@@ -52,7 +53,7 @@ down-all: ##> Stop dev and prod.
 
 ##@ Code
 
-format: build-dev ##> Fix and format Python files (changes source!).
+format: ##> Fix and format Python files (changes source!).
 	scripts/dev/format.sh
 
 
@@ -61,12 +62,12 @@ format: build-dev ##> Fix and format Python files (changes source!).
 clean: ##> Remove reports and caches.
 	scripts/dev/clean.sh
 
-reset: ##> Clean + remove containers and volumes (deletes prod history!).
+reset: ##> Clean + remove containers and prod history (models are kept).
 	scripts/dev/clean.sh --volumes
 
 ##@ Release
 
-bump: build-dev ##> Bump version (make bump PART=patch|minor|major).
+bump: ##> Bump version (make bump PART=patch|minor|major).
 	scripts/dev/bump.sh $(PART)
 
 release-plan: ##> Show the tag the current version would release.

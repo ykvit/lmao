@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Bump the project version in pyproject.toml and uv.lock using the dev image.
+# Bump the project version in pyproject.toml and uv.lock using the dev service.
 # Usage: bump.sh patch|minor|major [alpha|beta|rc|stable]
 set -Eeuo pipefail
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
-
-require_env CI_DEV_IMAGE
 
 [[ $# -gt 0 ]] || die "Usage: make bump PART=patch|minor|major"
 
@@ -14,12 +12,12 @@ for part in "$@"; do
     args+=(--bump "$part")
 done
 
-docker run --rm \
+# --no-deps: do not start Ollama just to bump a version.
+docker compose -f compose.yaml -f compose.dev.yaml \
+    run --rm --no-deps --build \
     --user "$(id -u):$(id -g)" \
     --env UV_CACHE_DIR=/tmp/uv-cache \
-    --volume "$REPO_ROOT:/app" \
-    --workdir /app \
-    "$CI_DEV_IMAGE" \
+    app \
     uv version "${args[@]}" --no-sync
 
 new_version="$(sed -nE 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' pyproject.toml)"

@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
-# Apply Ruff fixes and formatting to the working tree.
+# Apply Ruff fixes and formatting to the working tree using the dev service.
 set -Eeuo pipefail
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
-require_env CI_DEV_IMAGE
-
-docker run --rm \
-    --network none \
+# --no-deps: do not start Ollama just to run a formatter.
+docker compose -f compose.yaml -f compose.dev.yaml \
+    run --rm --no-deps --build \
     --user "$(id -u):$(id -g)" \
-    --volume "$REPO_ROOT:/app" \
-    --workdir /app \
-    "$CI_DEV_IMAGE" \
+    app \
     sh -c '
         status=0
         ruff check --fix --no-cache . || status=1

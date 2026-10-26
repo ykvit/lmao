@@ -42,6 +42,8 @@ container="$(
             mkdir -p /tmp/ci-reports
             pytest \
                 -p no:cacheprovider \
+                --cov \
+                --cov-report=term-missing \
                 --cov-report=xml:/tmp/ci-reports/coverage.xml \
                 --cov-report=html:/tmp/ci-reports/htmlcov
         '

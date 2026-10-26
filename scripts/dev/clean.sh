@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Remove generated reports and caches.
-# With --volumes also remove containers and Compose volumes (history!).
+# With --volumes also remove containers and Compose volumes (prod history!).
+# The models volume `ollama` is external: Compose never removes it.
 set -Eeuo pipefail
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
@@ -19,7 +20,7 @@ if [[ "$remove_volumes" == 1 ]]; then
 
     for env in dev prod; do
         docker compose \
-            -f compose.base.yaml \
+            -f compose.yaml \
             -f "compose.${env}.yaml" \
             down -v --remove-orphans
     done
@@ -36,5 +37,5 @@ find . \
         -name .ruff_cache \
     \) -prune -exec rm -rf {} +
 
-rm -rf -- htmlcov
+rm -rf -- htmlcov reports
 rm -f -- .coverage .coverage.* coverage.xml

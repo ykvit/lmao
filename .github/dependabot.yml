@@ -1,103 +1,73 @@
 version: 2
 
-updates:
-  - package-ecosystem: "github-actions"
-    # "/" covers .github/workflows; the glob covers composite actions.
-    directories:
-      - "/"
-      - "/.github/actions/*"
+multi-ecosystem-groups:
+  runtime:
     schedule:
       interval: "weekly"
       day: "monday"
       time: "09:00"
       timezone: "UTC"
-    cooldown:
-      default-days: 7
-    commit-message:
-      prefix: "chore(actions)"
-    labels:
-      - "dependencies"
-      - "github-actions"
-    open-pull-requests-limit: 3
-    groups:
-      github-actions:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "UTC"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "chore(deps)"
     labels:
       - "dependencies"
-      - "python"
-    open-pull-requests-limit: 5
-    groups:
-      dev-tools:
-        patterns:
-          - "ruff"
-          - "pytest*"
-          - "pip-audit"
-        update-types:
-          - "minor"
-          - "patch"
-      runtime:
-        patterns:
-          - "*"
-        exclude-patterns:
-          - "ruff"
-          - "pytest*"
-          - "pip-audit"
-        update-types:
-          - "minor"
-          - "patch"
+
+  ci-tooling:
+    schedule:
+      interval: "monthly"
+      time: "09:00"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
+      - "ci-tools"
+
+updates:
+  # Python packages (runtime and dev tools).
+  - package-ecosystem: "uv"
+    directory: "/"
+    patterns: ["*"]
+    multi-ecosystem-group: "runtime"
+    cooldown:
+      default-days: 7
 
   # Runtime images: ./Dockerfile (python, uv).
   - package-ecosystem: "docker"
     directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "UTC"
+    patterns: ["*"]
+    multi-ecosystem-group: "runtime"
     cooldown:
-      default-days: 3
-    commit-message:
-      prefix: "chore(docker)"
-    labels:
-      - "dependencies"
-      - "docker"
-    open-pull-requests-limit: 2
+      default-days: 7
+    # Python minor/major upgrades are done by hand (see below).
     ignore:
       - dependency-name: "python"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
 
-  - package-ecosystem: "docker"
-    directory: "/docker"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "UTC"
+  # Compose services: the Ollama image in compose.yaml.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    patterns: ["*"]
+    multi-ecosystem-group: "runtime"
     cooldown:
       default-days: 7
-    commit-message:
-      prefix: "chore(ci-tools)"
-    labels:
-      - "dependencies"
-      - "docker"
-      - "ci-tools"
-    open-pull-requests-limit: 3
-    groups:
-      ci-tools:
-        patterns:
-          - "*"
+
+  # GitHub Actions: workflows and composite actions.
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    patterns: ["*"]
+    multi-ecosystem-group: "ci-tooling"
+    cooldown:
+      default-days: 7
+
+  # CI tool images: docker/tools.Dockerfile.
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    patterns: ["*"]
+    multi-ecosystem-group: "ci-tooling"
+    cooldown:
+      default-days: 7

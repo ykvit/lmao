@@ -36,7 +36,6 @@ require_env() {
 }
 
 # Run a tool container with the repository mounted read-only.
-# Tools run on the host platform. Only images under test need CI_PLATFORM.
 docker_tool() {
     docker run --rm \
         --volume "$REPO_ROOT:/repo:ro" \

@@ -39,7 +39,7 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --cov=core --cov=app --cov-report=term-missing"
+addopts = "-ra -q"
 testpaths = [
     "tests",
 ]
@@ -48,7 +48,8 @@ pythonpath = [
 ]
 
 [tool.coverage.run]
-source = ["core", "."]
+source_pkgs = ["core", "app"]
+branch = true
 omit = [
     "tests/*",
     "*/__init__.py",
@@ -56,5 +57,9 @@ omit = [
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 0
+# Ratchet: raise this to the measured TOTAL (rounded down) with every PR.
+fail_under = 80
 skip_covered = false
+exclude_also = [
+    'if __name__ == .__main__.:',
+]

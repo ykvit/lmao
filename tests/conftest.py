@@ -4,7 +4,21 @@ Global pytest fixtures for the Local Model Assessment Operator.
 
 import pytest
 
+import app as app_module
 from app import app as flask_app
+
+
+@pytest.fixture(autouse=True)
+def isolated_state(tmp_path, monkeypatch):
+    """Runs every test in an empty working directory with no leftover tasks.
+
+    The app and the pipeline read and write the relative ``history/`` folder,
+    and ``TASKS`` is module-level state.
+    """
+    monkeypatch.chdir(tmp_path)
+    app_module.TASKS.clear()
+    yield
+    app_module.TASKS.clear()
 
 
 @pytest.fixture

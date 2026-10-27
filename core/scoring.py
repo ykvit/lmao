@@ -105,7 +105,13 @@ def recommend(models: list[dict]) -> dict:
         rule = RULE_FASTEST_ABOVE_THRESHOLD
         best = min(
             qualified,
-            key=lambda m: (m["median_time_sec"], -m["median"], m["model"]),
+            key=lambda m: (
+                m["median_time_sec"]
+                if m["median_time_sec"] is not None
+                else float("inf"),
+                -m["median"],
+                m["model"],
+            ),
         )
     else:
         rule = RULE_HIGHEST_MEDIAN

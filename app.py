@@ -117,7 +117,9 @@ def _read_json(path: str) -> dict | None:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except OSError, ValueError:
+    except OSError:
+        return None
+    except ValueError:
         return None
     return data if isinstance(data, dict) else None
 

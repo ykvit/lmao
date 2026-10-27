@@ -6,7 +6,7 @@ const CATEGORY_LABELS = {
     acceptable: "Generally acceptable",
     instruction_violation: "Violation of instructions",
     broken_logic: "Broken logic",
-    garbage: "Garbage / cognitive crash”",
+    garbage: "Garbage / cognitive crash",
 };
 const RULE_LABELS = {
     fastest_above_threshold: "the fastest model among those with a high pass rate",

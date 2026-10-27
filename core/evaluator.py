@@ -218,7 +218,7 @@ class EvaluationPipeline:
                     model=judge_model,
                     prompt=judge_prompt,
                     system_prompt=sys_prompt,
-                    format_json=True,
+                    format="json",
                 )
 
                 if judge_result["success"]:
@@ -328,7 +328,6 @@ class EvaluationPipeline:
             model=judge_model,
             prompt=summary_prompt,
             system_prompt="You are the Head AI Judge. Write a short, concise summary (in Markdown format) based on the models' test results and metrics.",
-            format_json=False,
         )
 
         if summary_result["success"]:

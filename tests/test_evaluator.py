@@ -53,7 +53,7 @@ def judge_json(scores):
 class FakeOllama:
     """Scripted stand-in for OllamaClient.
 
-    Calls with format_json=True are judge calls and consume judge_responses in
+    Calls with a format are judge calls and consume judge_responses in
     order. Other calls to the judge model are the final summary. Everything else
     is a candidate call.
     """
@@ -65,8 +65,8 @@ class FakeOllama:
         self.judge_calls = []
         self.summary_calls = []
 
-    def generate(self, model, prompt, system_prompt="", format_json=False):
-        if format_json:
+    def generate(self, model, prompt, system_prompt="", format=None):
+        if format:
             self.judge_calls.append(
                 {"model": model, "prompt": prompt, "system_prompt": system_prompt}
             )

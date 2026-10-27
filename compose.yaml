@@ -10,6 +10,8 @@ services:
   ollama:
     image: ollama/ollama:0.40.11@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
     restart: unless-stopped
+    environment:
+      - OLLAMA_MAX_LOADED_MODELS=1
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:

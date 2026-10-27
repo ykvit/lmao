@@ -11,6 +11,8 @@
     --success: #4caf50;
     --warning: #ff9800;
     --danger: #f44336;
+    --accent-color: var(--accent);
+    --border-color: var(--border);
 }
 
 body {

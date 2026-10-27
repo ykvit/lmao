@@ -2,11 +2,11 @@ let testCaseCount = 1;
 
 // UI labels for the stable category ids stored in the results.
 const CATEGORY_LABELS = {
-    perfect: "Ідеальне рішення",
-    acceptable: "В цілому піде",
-    instruction_violation: "Порушення інструкцій",
-    broken_logic: "Зламана логіка",
-    garbage: "Сміття / когнітивний краш",
+    perfect: "Perfect solution",
+    acceptable: "Generally acceptable",
+    instruction_violation: "Violation of instructions",
+    broken_logic: "Broken logic",
+    garbage: "Garbage / cognitive crash”",
 };
 const RULE_LABELS = {
     fastest_above_threshold: "the fastest model among those with a high pass rate",

@@ -150,8 +150,45 @@
 <div x-show="view === 'running'" x-cloak class="text-fg-muted">
     run <span x-text="run.id"></span> started. the progress screen comes in the next step.
 </div>
+{# Placeholder until step 5 (results). #}
+<div x-show="view === 'results'" x-cloak class="flex flex-col gap-15 text-fg-muted">
+    <div x-show="resultsError" role="alert"
+         class="border border-warn px-15 py-12 text-warn" x-text="resultsError"></div>
+    <div x-show="!resultsError && !results">loading…</div>
+    <div x-show="results">run <span x-text="activeRunId"></span> loaded. rendering comes in step 5.</div>
+</div>
 {% endblock %}
 
 {% block archive %}
-<div class="text-fg-muted">archive</div>
+<div class="flex flex-col">
+    <div class="pb-8 border-b border-line text-fg-muted">archive</div>
+
+    <div x-show="historyError" x-cloak role="alert"
+         class="mt-15 border border-warn px-15 py-12 text-warn flex flex-col gap-8">
+        <span x-text="historyError"></span>
+        <button type="button" @click="loadHistory()"
+                class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
+    </div>
+
+    <div x-show="historyLoaded && !historyError && history.length === 0" x-cloak
+         class="py-15 text-fg-muted">no runs yet. finished evaluations appear here.</div>
+
+    <template x-for="r in history" :key="r.task_id">
+        {# archive-item #}
+        <button type="button" @click="openRun(r.task_id)" :disabled="view === 'running'"
+                :aria-current="activeRunId === r.task_id ? 'true' : null"
+                class="block w-full text-left py-15 border-b border-line disabled:cursor-not-allowed">
+            <span class="flex items-center gap-8 text-subheading"
+                  :class="activeRunId === r.task_id ? 'text-fg' : 'text-fg-muted'">
+                <span x-show="activeRunId === r.task_id" class="size-6 shrink-0 bg-fg" aria-hidden="true"></span>
+                <span class="min-w-0 break-words" x-text="r.tag_name"></span>
+            </span>
+            <span class="mt-8 block text-fg-muted">
+                <span class="block" x-text="r.timestamp"></span>
+                <span class="block" x-text="r.models_tested + ' models · ' + r.questions_count + ' qs'"></span>
+                <span class="block break-words" x-text="'judge: ' + r.judge_model"></span>
+            </span>
+        </button>
+    </template>
+</div>
 {% endblock %}

@@ -2,6 +2,7 @@
 // deferred before Alpine itself (see templates/base.html).
 document.addEventListener("alpine:init", () => {
     let caseCounter = 0;
+    let openToken = 0; // ignores a late response of a superseded results request
 
     const newCase = () => ({
         id: ++caseCounter,
@@ -39,12 +40,16 @@ document.addEventListener("alpine:init", () => {
         submitting: false,
 
         history: [],
+        historyLoaded: false,
+        historyError: "",
         activeRunId: null,
+        resultsError: "",
         run: freshRun(),
         results: null,
 
         init() {
             this.loadModels();
+            this.loadHistory();
         },
 
         get pct() {
@@ -72,6 +77,43 @@ document.addEventListener("alpine:init", () => {
                 this.judge = this.models[0] ?? "";
             }
             this.selected = this.selected.filter((m) => this.models.includes(m));
+        },
+
+        // --- archive --------------------------------------------------------
+
+        async loadHistory() {
+            try {
+                const response = await fetch("/api/history");
+                if (!response.ok) throw new Error(`request failed (${response.status})`);
+                this.history = await response.json();
+                this.historyError = "";
+            } catch (e) {
+                console.error("Failed to load history:", e);
+                this.historyError = "failed to load the archive.";
+            }
+            this.historyLoaded = true;
+        },
+
+        // Opens a saved run. Disabled while a run is in progress: the running
+        // screen would be lost.
+        async openRun(id) {
+            if (this.view === "running") return;
+            const token = ++openToken;
+            this.activeRunId = id;
+            this.view = "results";
+            this.results = null;
+            this.resultsError = "";
+            try {
+                const response = await fetch(`/api/results/${encodeURIComponent(id)}`);
+                const data = await response.json().catch(() => ({}));
+                if (token !== openToken) return;
+                if (!response.ok) {
+                    throw new Error(data.error || `request failed (${response.status})`);
+                }
+                this.results = data;
+            } catch (e) {
+                if (token === openToken) this.resultsError = e.message;
+            }
         },
 
         // --- test cases -----------------------------------------------------

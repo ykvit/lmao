@@ -64,6 +64,7 @@ document.addEventListener("alpine:init", () => {
         resultsError: "",
         run: freshRun(),
         results: null,
+        report: null,
 
         init() {
             this.loadModels();
@@ -73,6 +74,11 @@ document.addEventListener("alpine:init", () => {
         // A run is in progress: the form and the archive are locked.
         get busy() {
             return this.view === "running" && this.run.status === "running";
+        },
+
+        get runTitle() {
+            const run = this.history.find((r) => r.task_id === this.activeRunId);
+            return run ? run.tag_name : this.activeRunId;
         },
 
         get pct() {
@@ -130,6 +136,7 @@ document.addEventListener("alpine:init", () => {
             this.activeRunId = id;
             this.view = "results";
             this.results = null;
+            this.report = null;
             this.resultsError = "";
             try {
                 const response = await fetch(`/api/results/${encodeURIComponent(id)}`);
@@ -138,8 +145,10 @@ document.addEventListener("alpine:init", () => {
                 if (!response.ok) {
                     throw new Error(data.error || `request failed (${response.status})`);
                 }
+                this.report = buildReport(data);
                 this.results = data;
             } catch (e) {
+                console.error("Failed to open run:", e);
                 if (token === openToken) this.resultsError = e.message;
             }
         },

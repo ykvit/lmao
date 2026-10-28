@@ -207,12 +207,145 @@
         </div>
     </template>
 </div>
-{# Placeholder until step 5 (results). #}
-<div x-show="view === 'results'" x-cloak class="flex flex-col gap-15 text-fg-muted">
+{# results, per model #}
+<div x-show="view === 'results'" x-cloak class="flex flex-col gap-33">
     <div x-show="resultsError" role="alert"
          class="border border-warn px-15 py-12 text-warn" x-text="resultsError"></div>
-    <div x-show="!resultsError && !results">loading…</div>
-    <div x-show="results">run <span x-text="activeRunId"></span> loaded. rendering comes in step 5.</div>
+    <div x-show="!resultsError && !report" class="text-fg-muted">loading…</div>
+
+    <template x-if="report">
+        <div class="flex flex-col gap-33">
+
+            <div class="flex flex-col gap-8">
+                <div class="text-heading" x-text="runTitle"></div>
+                <div class="text-fg-muted break-words" x-text="report.meta"></div>
+            </div>
+
+            {# summary #}
+            <section class="flex flex-col gap-15">
+                <div class="pb-8 border-b border-line text-fg-muted">01 summary</div>
+                <div class="flex flex-col gap-8">
+                    <div class="text-fg-muted" x-text="report.verdict.label"></div>
+                    <div x-show="report.verdict.model" class="text-heading break-words"
+                         x-text="report.verdict.short" :title="report.verdict.model"></div>
+                    <div class="text-fg-muted" x-text="report.verdict.rule"></div>
+                </div>
+                <template x-for="(n, ni) in report.notes" :key="ni">
+                    <div class="text-fg-muted" x-text="n"></div>
+                </template>
+
+                <div class="flex flex-col gap-12 max-w-720">
+                    <template x-for="(b, bi) in report.summaryBlocks" :key="bi">
+                        <div>
+                            <template x-if="b.type === 'heading'">
+                                <div class="text-subheading text-fg">
+                                    <template x-for="(p, pi) in b.inlines" :key="pi"><span x-text="p.text"></span></template>
+                                </div>
+                            </template>
+                            <template x-if="b.type === 'paragraph'">
+                                <p class="text-fg-muted">
+                                    <template x-for="(p, pi) in b.inlines" :key="pi"><span :class="p.bold && 'text-fg'" x-text="p.text"></span></template>
+                                </p>
+                            </template>
+                            <template x-if="b.type === 'list'">
+                                <ul class="flex flex-col gap-6">
+                                    <template x-for="(item, ii) in b.items" :key="ii">
+                                        <li class="flex gap-8 text-fg-muted">
+                                            <span aria-hidden="true">–</span>
+                                            <span class="min-w-0">
+                                                <template x-for="(p, pi) in item" :key="pi"><span :class="p.bold && 'text-fg'" x-text="p.text"></span></template>
+                                            </span>
+                                        </li>
+                                    </template>
+                                </ul>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            {# comparison matrix #}
+            <section class="flex flex-col gap-15">
+                <div class="pb-8 border-b border-line text-fg-muted">02 comparison</div>
+                <div class="overflow-x-auto">
+                    <div class="min-w-max">
+                        <div class="grid items-center gap-x-15 py-12 border-b border-line text-fg-muted" :style="report.grid">
+                            <div class="sticky left-0 bg-bg">model</div>
+                            <div>median</div>
+                            <div>pass</div>
+                            <template x-for="h in report.questionHeads" :key="h.id">
+                                <div x-text="h.id" :title="h.title"></div>
+                            </template>
+                            <div>t/s</div>
+                            <div>time, s</div>
+                        </div>
+                        <template x-for="m in report.models" :key="m.model">
+                            <div class="grid items-center gap-x-15 py-12 border-b border-line" :style="report.grid">
+                                <div class="sticky left-0 bg-bg pr-15 break-words" x-text="m.short" :title="m.model"></div>
+                                <div class="text-heading-sm" x-text="m.median"></div>
+                                <div x-text="m.passRate"></div>
+                                <template x-for="(c, ci) in m.cells" :key="ci">
+                                    <div :class="c.warn ? 'text-warn' : (c.muted ? 'text-fg-muted' : 'text-fg')"
+                                         x-text="c.text" :title="c.title"></div>
+                                </template>
+                                <div class="text-fg-muted" x-text="m.tps"></div>
+                                <div class="text-fg-muted" x-text="m.time"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, not in the median</div>
+            </section>
+
+            {# model cards #}
+            <section class="flex flex-col gap-22">
+                <div class="pb-8 border-b border-line text-fg-muted">03 per model</div>
+                <template x-for="m in report.models" :key="m.model">
+                    {# card #}
+                    <article class="border border-line p-22">
+                        <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
+                            <div class="text-subheading min-w-0 break-words" x-text="m.short" :title="m.model"></div>
+                            <div class="text-fg-muted" x-text="m.metricsLine"></div>
+                        </div>
+                        <template x-for="e in m.entries" :key="e.qid">
+                            {# eval block #}
+                            <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+                                <div class="w-120 shrink-0">
+                                    <div class="text-fg-muted" x-text="e.label"></div>
+                                    <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
+                                    <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
+                                    <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
+                                </div>
+                                <div class="flex-1 min-w-0 flex flex-col gap-12">
+                                    <div class="text-fg-muted" x-text="e.question"></div>
+                                    <template x-for="(n, ni) in e.notes" :key="ni">
+                                        <div class="text-fg-muted" x-text="n"></div>
+                                    </template>
+                                    <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
+                                    <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
+                                </div>
+                            </div>
+                        </template>
+                    </article>
+                </template>
+            </section>
+
+            {# references #}
+            <section class="flex flex-col">
+                <div class="pb-8 border-b border-line text-fg-muted">04 reference answers</div>
+                <template x-for="r in report.references" :key="r.id">
+                    <details class="border-b border-line">
+                        <summary class="py-12 cursor-pointer text-fg-muted" x-text="r.title"></summary>
+                        <div class="pb-15 flex flex-col gap-12">
+                            <div class="text-fg-muted" x-text="r.question"></div>
+                            <pre class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="r.text"></pre>
+                        </div>
+                    </details>
+                </template>
+            </section>
+
+        </div>
+    </template>
 </div>
 {% endblock %}
 

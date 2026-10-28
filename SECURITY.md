@@ -40,6 +40,17 @@ output as text, never as HTML.
 
 ## Supply chain
 
-Images and Actions are pinned by digest or SHA, and dependencies are locked with
-hashes. CI runs Trivy, `pip-audit` and zizmor, daily scans cover the published
-image, and release images are attested.
+- Images and Actions are pinned by digest or SHA; dependencies are locked
+  with hashes.
+- CI runs Trivy on the published image, `pip-audit` on dependencies and
+  zizmor on workflows, with the results uploaded to code scanning; daily
+  scheduled scans cover the published image.
+- CodeQL analysis runs on pushes and pull requests (default setup), in
+  addition to the SARIF scanners.
+- Release images are attested with build provenance (`mode=max`).
+- Dependabot alerts, security updates and grouped version updates are
+  enabled: weekly for the runtime group, monthly for CI tooling.
+- Secret scanning and push protection are enabled.
+- `main` and `v*` tags are protected by rulesets: pull requests with one
+  approval, required CI checks, squash-only merges with linear history,
+  no force pushes and no tag deletion.

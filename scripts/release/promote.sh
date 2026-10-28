@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy the verified image index (with attestations) to the release tags
+# Copy the verified image to the release tags
 # and check that every tag resolves to the digest that was tested.
 # IMAGE_SOURCE: image@digest to copy (the staging registry).
 # IMAGE_TAGS: newline-separated list from docker/metadata-action.

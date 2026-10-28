@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>lmao | local model assessment operator</title>
+    {# Must be deferred BEFORE Alpine so that 'alpine:init' is already listened to. #}
+    <script defer src="{{ url_for('static', filename='js/lmao.js') }}"></script>
+    {% include "_theme.html" %}
+</head>
+<body x-data="lmao" class="h-screen flex flex-col overflow-hidden bg-bg text-fg font-sans font-light text-caption">
+
+    <header class="h-66 shrink-0 flex items-center justify-between px-22 border-b border-line">
+        <div class="flex items-center gap-33">
+            <button type="button" @click="setupOpen = !setupOpen"
+                    :aria-expanded="setupOpen" aria-controls="setup"
+                    class="flex flex-col items-center gap-6"
+                    :class="setupOpen ? 'text-fg' : 'text-fg-muted'">
+                <span class="relative block size-20 border border-fg">
+                    <span class="absolute -top-px -bottom-px bg-fg"
+                          :class="setupOpen ? '-left-px w-7' : 'left-6 w-px'"></span>
+                </span>
+                setup
+            </button>
+            <div class="flex items-center gap-15">
+                <span class="text-heading-sm">lmao</span>
+                <span class="text-fg-muted">local model assessment operator</span>
+            </div>
+        </div>
+        <button type="button" @click="archiveOpen = !archiveOpen"
+                :aria-expanded="archiveOpen" aria-controls="archive"
+                class="flex flex-col items-center gap-6"
+                :class="archiveOpen ? 'text-fg' : 'text-fg-muted'">
+            <span class="relative block size-20 border border-fg">
+                <span class="absolute -top-px -bottom-px bg-fg"
+                      :class="archiveOpen ? '-right-px w-7' : 'right-6 w-px'"></span>
+            </span>
+            archive
+        </button>
+    </header>
+
+    <div class="flex flex-1 min-h-0">
+        <aside id="setup" x-show="setupOpen" x-cloak
+               class="w-320 shrink-0 bg-surface border-r border-line p-22 overflow-y-auto">
+            {% block setup %}{% endblock %}
+        </aside>
+
+        <main class="flex-1 min-w-0 p-33 overflow-y-auto">
+            {% block main %}{% endblock %}
+        </main>
+
+        <aside id="archive" x-show="archiveOpen" x-cloak
+               class="w-280 shrink-0 bg-surface border-l border-line p-22 overflow-y-auto">
+            {% block archive %}{% endblock %}
+        </aside>
+    </div>
+
+</body>
+</html>

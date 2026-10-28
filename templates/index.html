@@ -136,7 +136,7 @@
     <div class="flex flex-col gap-12">
         <div x-show="formError" x-cloak role="alert"
              class="border border-warn px-15 py-12 text-warn" x-text="formError"></div>
-        <button type="submit" :disabled="submitting || view === 'running'"
+        <button type="submit" :disabled="submitting || busy"
                 class="w-full text-left bg-fg text-bg px-22 py-13 hover:bg-fg-muted disabled:bg-line disabled:text-fg-muted disabled:cursor-not-allowed">run evaluation</button>
     </div>
 </form>
@@ -146,9 +146,66 @@
 <div x-show="view === 'idle'" x-cloak class="text-fg-muted">
     select models, add test cases and press run evaluation.
 </div>
-{# Placeholder until step 4 (running screen). #}
-<div x-show="view === 'running'" x-cloak class="text-fg-muted">
-    run <span x-text="run.id"></span> started. the progress screen comes in the next step.
+{# running #}
+<div x-show="view === 'running'" x-cloak class="flex flex-col gap-33">
+
+    <div class="flex flex-col gap-15">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center gap-8"
+                 :class="run.status === 'error' ? 'text-warn' : 'text-fg'">
+                <span x-show="run.status === 'running'" aria-hidden="true"
+                      class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
+                <span class="text-subheading"
+                      x-text="run.status === 'error' ? 'stopped' : 'running'"></span>
+            </div>
+            <div class="text-fg-muted flex items-center gap-15">
+                <span x-text="'elapsed ' + fmtClock(elapsed)"></span>
+                <span x-text="run.done + ' / ' + run.total"></span>
+            </div>
+        </div>
+        <div role="progressbar" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100" class="h-4 bg-line">
+            <div class="h-4 bg-fg" :style="'width:' + pct + '%'"></div>
+        </div>
+    </div>
+
+    <div x-show="run.status === 'error'" x-cloak role="alert"
+         class="border border-warn px-15 py-12 text-warn flex flex-col gap-12">
+        <span x-text="run.error"></span>
+        <button type="button" @click="dismissRun()"
+                class="self-start border border-warn px-15 py-9 hover:bg-line">dismiss</button>
+    </div>
+
+    <template x-for="g in phaseGroups" :key="g.phase">
+        <div class="flex flex-col">
+            <div class="pb-8 border-b border-line text-fg-muted" x-text="g.title"></div>
+            <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
+                {# status-row #}
+                <div>
+                    <div class="flex items-start gap-15 py-10 border-b border-line">
+                        <div class="w-72 shrink-0 flex items-center gap-8" :class="stateClass(s.state)">
+                            <span x-show="s.state === 'running'" aria-hidden="true"
+                                  class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
+                            <span x-text="s.state"></span>
+                        </div>
+                        <div class="flex-1 min-w-0 break-words"
+                             :class="(s.state === 'queued' || s.state === 'skipped') && 'text-fg-muted'"
+                             x-text="s.label" :title="s.model"></div>
+                        <div class="max-w-320 break-words text-fg-muted" x-text="rowMeta(s)"></div>
+                    </div>
+                    {# load notice #}
+                    <div class="pl-87 py-10 border-b border-line" x-show="showLoadNotice(s)" x-cloak aria-live="polite">
+                        <div class="bg-surface border border-line p-15 flex flex-col gap-8">
+                            <div class="flex items-center gap-8">
+                                <span class="size-8 bg-link animate-breathe motion-reduce:animate-none" aria-hidden="true"></span>
+                                the model may still be loading — this is normal
+                            </div>
+                            <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </template>
 </div>
 {# Placeholder until step 5 (results). #}
 <div x-show="view === 'results'" x-cloak class="flex flex-col gap-15 text-fg-muted">
@@ -175,7 +232,7 @@
 
     <template x-for="r in history" :key="r.task_id">
         {# archive-item #}
-        <button type="button" @click="openRun(r.task_id)" :disabled="view === 'running'"
+        <button type="button" @click="openRun(r.task_id)" :disabled="busy"
                 :aria-current="activeRunId === r.task_id ? 'true' : null"
                 class="block w-full text-left py-15 border-b border-line disabled:cursor-not-allowed">
             <span class="flex items-center gap-8 text-subheading"

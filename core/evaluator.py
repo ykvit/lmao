@@ -5,13 +5,18 @@ question (A), every candidate answers every question (B), the judge grades each
 answer on its own against the reference without seeing the model name (C), and
 Python aggregates the grades into a summary and a recommendation (D).
 
-The phases run strictly one after another and models are loaded one at a time.
+Local mode runs the phases strictly one after another and keeps one model in
+VRAM at a time. Cloud mode (a judge running remotely) runs the judge calls in a
+thread pool while the candidates still generate one by one: references are made
+and every answer is graded as soon as it is ready.
 """
 
 import json
 import os
 import re
+import threading
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -38,6 +43,7 @@ from .scoring import (
 
 SCHEMA_VERSION = 2
 MODE_LOCAL = "local"
+MODE_CLOUD = "cloud"
 
 PHASE_REFERENCE = "reference"
 PHASE_ANSWER = "answer"
@@ -56,6 +62,8 @@ JUDGE_NUM_CTX = 8192
 JUDGE_SEED = 42
 MAX_REFERENCE_ATTEMPTS = 2
 MAX_GRADE_ATTEMPTS = 3
+# Parallel judge calls in cloud mode; lower it if the cloud rate-limits requests.
+CLOUD_WORKERS = 4
 
 _SUMMED_METRICS = (
     "total_time_sec",
@@ -117,20 +125,36 @@ def _write_json(path: str, data: dict) -> None:
 
 
 class _Run:
-    """Progress counter and event emitter of one evaluation run."""
+    """Progress counter and event emitter of one evaluation run.
+
+    Cloud mode reports from several threads, so the counter and the callback
+    sit behind one lock and events stay in the same order as the progress.
+    """
 
     def __init__(self, task_id: str, callback: Callable, total: int):
         self.task_id = task_id
         self.callback = callback
         self.total = total
         self.done = 0
+        self._lock = threading.Lock()
 
     def advance(self) -> None:
-        """Marks one step as finished."""
-        self.done += 1
+        """Marks one step as finished without an event (a skipped step)."""
+        with self._lock:
+            self.done += 1
 
     def emit(self, event_type, phase, model=None, question=None, **extra) -> None:
         """Pushes an event carrying the phase, model, question and progress."""
+        with self._lock:
+            self._send(event_type, phase, model, question, extra)
+
+    def complete(self, event_type, phase, model=None, question=None, **extra) -> None:
+        """Marks one step as finished and reports it as a single update."""
+        with self._lock:
+            self.done += 1
+            self._send(event_type, phase, model, question, extra)
+
+    def _send(self, event_type, phase, model, question, extra) -> None:
         self.callback(
             self.task_id,
             {
@@ -213,10 +237,12 @@ class EvaluationPipeline:
         Args:
             task_id (str): The unique identifier for the current run.
             payload (dict): Configuration data from the UI (candidates, judge,
-                base_rationale, test_cases with an optional reference each).
+                judge_cloud, base_rationale, test_cases with an optional
+                reference each).
             update_status_cb (Callable): Pushes events to the app stream.
         """
         judge = payload.get("judge")
+        cloud = bool(payload.get("judge_cloud"))
         candidates = list(dict.fromkeys(payload.get("candidates", [])))
         base_rationale = payload.get("base_rationale", "")
         questions = [
@@ -234,26 +260,16 @@ class EvaluationPipeline:
         )
         metrics = {model: _empty_metrics() for model in candidates}
 
-        # A: reference answers.
-        with self._loaded(judge):
-            self._generate_references(run, judge, questions)
+        runner = self._run_cloud if cloud else self._run_local
+        summary = runner(run, judge, candidates, questions, metrics, base_rationale)
 
-        # B: every candidate answers every question, one model at a time.
-        for model in candidates:
-            with self._loaded(model):
-                self._answer_questions(run, model, questions, metrics[model])
-
-        # C and D: grading and summary share one load of the judge.
-        with self._loaded(judge):
-            self._grade_answers(run, judge, questions, base_rationale)
-            summary = self._summarize(run, judge, questions, candidates)
-
+        mode = MODE_CLOUD if cloud else MODE_LOCAL
         _write_json(
             os.path.join(run_folder, "technical_metrics.json"),
             {
                 "task_id": task_id,
                 "judge_model": judge,
-                "mode": MODE_LOCAL,
+                "mode": mode,
                 "metrics": metrics,
             },
         )
@@ -263,7 +279,7 @@ class EvaluationPipeline:
                 "schema_version": SCHEMA_VERSION,
                 "task_id": task_id,
                 "judge_model": judge,
-                "mode": MODE_LOCAL,
+                "mode": mode,
                 "judge_is_candidate": judge in candidates,
                 "finished_at": datetime.now().isoformat(timespec="seconds"),
                 "questions_results": questions,
@@ -276,27 +292,80 @@ class EvaluationPipeline:
             {"type": "completed", "message": "All tasks completed successfully."},
         )
 
+    # --- orchestration ------------------------------------------------------
+
+    def _run_local(
+        self, run, judge, candidates, questions, metrics, base_rationale
+    ) -> dict:
+        """A, B, C and D strictly one after another, one model in VRAM at a time."""
+        with self._loaded(judge):
+            for question in questions:
+                self._make_reference(run, judge, question)
+
+        for model in candidates:
+            self._answer_all(run, model, questions, metrics[model])
+
+        # Grading and the summary share one load of the judge.
+        with self._loaded(judge):
+            for question in questions:
+                for entry in question["results"]:
+                    self._grade_entry(run, judge, question, base_rationale, entry)
+            return self._summarize(run, judge, questions, candidates)
+
+    def _run_cloud(
+        self, run, judge, candidates, questions, metrics, base_rationale
+    ) -> dict:
+        """Judge calls run in a pool while the candidates generate one by one."""
+        with ThreadPoolExecutor(max_workers=CLOUD_WORKERS) as pool:
+            references = {
+                question["id"]: pool.submit(self._make_reference, run, judge, question)
+                for question in questions
+            }
+            gradings = []
+
+            def grade_when_answered(question, entry):
+                gradings.append(
+                    pool.submit(
+                        self._grade_after,
+                        references[question["id"]],
+                        run,
+                        judge,
+                        question,
+                        base_rationale,
+                        entry,
+                    )
+                )
+
+            for model in candidates:
+                self._answer_all(
+                    run, model, questions, metrics[model], grade_when_answered
+                )
+
+            # Surface any exception raised in a worker thread.
+            for future in [*references.values(), *gradings]:
+                future.result()
+
+        return self._summarize(run, judge, questions, candidates)
+
     # --- A: references ------------------------------------------------------
 
-    def _generate_references(self, run: _Run, judge: str, questions: list) -> None:
-        for question in questions:
-            run.emit("reference_start", PHASE_REFERENCE, judge, question["id"])
+    def _make_reference(self, run: _Run, judge: str, question: dict) -> None:
+        run.emit("reference_start", PHASE_REFERENCE, judge, question["id"])
 
-            if question["reference"]["source"] != SOURCE_PROVIDED:
-                text = self._generate_reference(judge, question["question"])
-                if text:
-                    question["reference"] = {"text": text, "source": SOURCE_GENERATED}
-                    question["no_reference"] = False
+        if question["reference"]["source"] != SOURCE_PROVIDED:
+            text = self._generate_reference(judge, question["question"])
+            if text:
+                question["reference"] = {"text": text, "source": SOURCE_GENERATED}
+                question["no_reference"] = False
 
-            run.advance()
-            run.emit(
-                "reference_done",
-                PHASE_REFERENCE,
-                judge,
-                question["id"],
-                success=not question["no_reference"],
-                source=question["reference"]["source"],
-            )
+        run.complete(
+            "reference_done",
+            PHASE_REFERENCE,
+            judge,
+            question["id"],
+            success=not question["no_reference"],
+            source=question["reference"]["source"],
+        )
 
     def _generate_reference(self, judge: str, question: str) -> str | None:
         """Returns a complete reference answer, or None after the last attempt."""
@@ -312,35 +381,52 @@ class EvaluationPipeline:
 
     # --- B: candidate answers -----------------------------------------------
 
-    def _answer_questions(
-        self, run: _Run, model: str, questions: list, metrics: dict
+    def _answer_all(
+        self,
+        run: _Run,
+        model: str,
+        questions: list,
+        metrics: dict,
+        on_answer: Callable | None = None,
     ) -> None:
+        """One candidate answers every question with the model loaded once.
+
+        Args:
+            on_answer (Callable, optional): Called with the question and the
+                saved entry right after each answer.
+        """
         run.emit("candidate_start", PHASE_ANSWER, model)
 
-        for question in questions:
-            run.emit("answer_start", PHASE_ANSWER, model, question["id"])
+        with self._loaded(model):
+            for question in questions:
+                entry = self._answer(run, model, question, metrics)
+                if on_answer:
+                    on_answer(question, entry)
 
-            result = self.ollama.generate(
-                model,
-                build_answer_prompt(question["question"]),
-                think=False,
-                options=CANDIDATE_OPTIONS,
-                keep_alive=KEEP_ALIVE,
-            )
-            entry = self._answer_entry(model, result)
-            question["results"].append(entry)
-            if result["success"]:
-                _add_metrics(metrics, result["metrics"])
+    def _answer(self, run: _Run, model: str, question: dict, metrics: dict) -> dict:
+        run.emit("answer_start", PHASE_ANSWER, model, question["id"])
 
-            run.advance()
-            run.emit(
-                "answer_done",
-                PHASE_ANSWER,
-                model,
-                question["id"],
-                success=result["success"],
-                error=entry["error"],
-            )
+        result = self.ollama.generate(
+            model,
+            build_answer_prompt(question["question"]),
+            think=False,
+            options=CANDIDATE_OPTIONS,
+            keep_alive=KEEP_ALIVE,
+        )
+        entry = self._answer_entry(model, result)
+        question["results"].append(entry)
+        if result["success"]:
+            _add_metrics(metrics, result["metrics"])
+
+        run.complete(
+            "answer_done",
+            PHASE_ANSWER,
+            model,
+            question["id"],
+            success=result["success"],
+            error=entry["error"],
+        )
+        return entry
 
     def _answer_entry(self, model: str, result: dict) -> dict:
         entry = {
@@ -374,36 +460,33 @@ class EvaluationPipeline:
 
     # --- C: grading ---------------------------------------------------------
 
-    def _grade_answers(
-        self, run: _Run, judge: str, questions: list, base_rationale: str
+    def _grade_after(self, reference: Future, *args) -> None:
+        """Waits for the question's reference, then grades (cloud mode)."""
+        reference.result()
+        self._grade_entry(*args)
+
+    def _grade_entry(
+        self, run: _Run, judge: str, question: dict, base_rationale: str, entry: dict
     ) -> None:
-        for question in questions:
-            for entry in question["results"]:
-                if entry["status"] == STATUS_GENERATION_ERROR:
-                    run.advance()
-                    continue
+        if entry["status"] == STATUS_GENERATION_ERROR:
+            run.advance()
+            return
 
-                run.emit(
-                    "grading_start",
-                    PHASE_GRADING,
-                    entry["model_name"],
-                    question["id"],
-                )
-                grade, error = self._grade(judge, question, base_rationale, entry)
-                if grade:
-                    entry.update(grade)
-                else:
-                    entry.update(status=STATUS_JUDGE_ERROR, error=error)
+        run.emit("grading_start", PHASE_GRADING, entry["model_name"], question["id"])
+        grade, error = self._grade(judge, question, base_rationale, entry)
+        if grade:
+            entry.update(grade)
+        else:
+            entry.update(status=STATUS_JUDGE_ERROR, error=error)
 
-                run.advance()
-                run.emit(
-                    "grading_done",
-                    PHASE_GRADING,
-                    entry["model_name"],
-                    question["id"],
-                    success=grade is not None,
-                    error=error,
-                )
+        run.complete(
+            "grading_done",
+            PHASE_GRADING,
+            entry["model_name"],
+            question["id"],
+            success=grade is not None,
+            error=error,
+        )
 
     def _grade(
         self, judge: str, question: dict, base_rationale: str, entry: dict
@@ -475,7 +558,6 @@ class EvaluationPipeline:
         else:
             text = f"Failed to generate summary: {result['error']}"
 
-        run.advance()
-        run.emit("summary_done", PHASE_SUMMARY, judge, success=result["success"])
+        run.complete("summary_done", PHASE_SUMMARY, judge, success=result["success"])
 
         return {"models": models, "recommendation": recommendation, "text": text}

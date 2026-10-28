@@ -8,6 +8,8 @@ logic without any model. Every test runs in a temporary working directory (see
 """
 
 import json
+import threading
+from collections import Counter
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -63,26 +65,39 @@ def grade_json(score, comment="fine"):
 
 
 class FakeOllama:
-    """Scripted stand-in for OllamaClient that tracks loaded models.
+    """Scripted, thread-safe stand-in for OllamaClient that tracks loaded models.
 
     Calls are routed by their system prompt and format: reference calls consume
     ``references``, calls with the grade schema consume ``grades`` in order, the
     summary call returns ``summary`` and everything else is a candidate call.
-    A value in ``answers`` may be an exception, which is raised.
+    A scripted value may be an exception, which is raised. Candidates listed in
+    ``wait_for_grading`` block until some grading call has happened, which
+    proves that grading runs while candidates are still generating.
     """
 
-    def __init__(self, answers=None, grades=None, references=None, summary=None):
+    def __init__(
+        self,
+        answers=None,
+        grades=None,
+        references=None,
+        summary=None,
+        wait_for_grading=(),
+    ):
         self.answers = answers or {}
         self.grades = list(grades or [])
         self.references = list(references or [])
         self.summary = summary or ok("## Summary")
+        self.wait_for_grading = set(wait_for_grading)
         self.reference_calls = []
         self.grading_calls = []
         self.summary_calls = []
         self.candidate_calls = []
         self.loaded = set()
         self.loads = {}
+        self.unloaded = []
         self.max_loaded = 0
+        self.graded = threading.Event()
+        self._lock = threading.Lock()
 
     def generate(
         self,
@@ -102,34 +117,44 @@ class FakeOllama:
             "think": think,
             "options": options,
         }
-        if model not in self.loaded:
-            self.loads[model] = self.loads.get(model, 0) + 1
-            self.loaded.add(model)
-        self.max_loaded = max(self.max_loaded, len(self.loaded))
+        with self._lock:
+            if model not in self.loaded:
+                self.loads[model] = self.loads.get(model, 0) + 1
+                self.loaded.add(model)
+            self.max_loaded = max(self.max_loaded, len(self.loaded))
 
-        if system_prompt == REFERENCE_SYSTEM:
-            self.reference_calls.append(call)
-            return self._next(self.references, ok("reference answer"))
-        if system_prompt == SUMMARY_SYSTEM:
-            self.summary_calls.append(call)
-            return self.summary
-        if format == GRADE_SCHEMA:
-            self.grading_calls.append(call)
-            return self._next(self.grades, ok(grade_json(80)))
+            if system_prompt == REFERENCE_SYSTEM:
+                self.reference_calls.append(call)
+                return self._next(self.references, ok("reference answer"))
+            if system_prompt == SUMMARY_SYSTEM:
+                self.summary_calls.append(call)
+                return self.summary
+            if format == GRADE_SCHEMA:
+                self.grading_calls.append(call)
+                self.graded.set()
+                return self._next(self.grades, ok(grade_json(80)))
 
-        self.candidate_calls.append(call)
-        scripted = self.answers.get(model, ok("answer"))
+            self.candidate_calls.append(call)
+            scripted = self.answers.get(model, ok("answer"))
+
+        if model in self.wait_for_grading:
+            assert self.graded.wait(timeout=5), "grading did not run in parallel"
         if isinstance(scripted, Exception):
             raise scripted
         return scripted
 
     def unload(self, model):
-        self.loaded.discard(model)
+        with self._lock:
+            self.loaded.discard(model)
+            self.unloaded.append(model)
         return True
 
     @staticmethod
     def _next(queue, default):
-        return queue.pop(0) if queue else default
+        item = queue.pop(0) if queue else default
+        if isinstance(item, Exception):
+            raise item
+        return item
 
 
 def make_payload(**overrides):
@@ -166,13 +191,18 @@ def load(pipeline, name):
 
 
 def results_by_model(pipeline, question=0):
-    [*questions] = load(pipeline, "evaluation_results.json")["questions_results"]
+    questions = load(pipeline, "evaluation_results.json")["questions_results"]
     return {r["model_name"]: r for r in questions[question]["results"]}
 
 
 def summary_by_model(pipeline):
     summary = load(pipeline, "evaluation_results.json")["summary"]
     return {m["model"]: m for m in summary["models"]}
+
+
+def two_questions(**overrides):
+    test_cases = [{"question": "Q1"}, {"question": "Q2"}]
+    return make_payload(test_cases=test_cases, **overrides)
 
 
 # --- _remove_think_tags -----------------------------------------------------
@@ -309,9 +339,8 @@ def test_candidates_get_a_length_limited_prompt_without_thinking():
 
 def test_models_are_loaded_once_and_never_together():
     ollama = FakeOllama()
-    test_cases = [{"question": "Q1"}, {"question": "Q2"}]
 
-    run(EvaluationPipeline(ollama), make_payload(test_cases=test_cases))
+    run(EvaluationPipeline(ollama), two_questions())
 
     # The judge is loaded twice: for the references, then for grading and summary.
     assert ollama.loads == {"judge": 2, "cand-a": 1, "cand-b": 1}
@@ -592,3 +621,86 @@ def test_failed_summary_is_stored_as_message():
     assert events[-1]["type"] == "completed"
     summary = load(pipeline, "evaluation_results.json")["summary"]
     assert summary["text"] == "Failed to generate summary: boom"
+
+
+# --- cloud mode -------------------------------------------------------------
+
+
+def test_cloud_mode_gives_the_same_results_as_local_mode():
+    local = EvaluationPipeline(FakeOllama())
+    run(local, two_questions())
+    local_results = load(local, "evaluation_results.json")
+    local_metrics = load(local, "technical_metrics.json")
+
+    cloud = EvaluationPipeline(FakeOllama())
+    run(cloud, two_questions(judge_cloud=True))
+    cloud_results = load(cloud, "evaluation_results.json")
+    cloud_metrics = load(cloud, "technical_metrics.json")
+
+    assert (local_results["mode"], cloud_results["mode"]) == ("local", "cloud")
+    assert cloud_metrics["mode"] == "cloud"
+    assert cloud_results["questions_results"] == local_results["questions_results"]
+    assert cloud_results["summary"] == local_results["summary"]
+    assert cloud_metrics["metrics"] == local_metrics["metrics"]
+
+
+def test_cloud_mode_grades_while_candidates_are_still_generating():
+    ollama = FakeOllama(wait_for_grading={"cand-b"})
+
+    events = run(EvaluationPipeline(ollama), make_payload(judge_cloud=True))
+
+    assert events[-1]["type"] == "completed"
+
+
+def test_cloud_mode_only_unloads_local_candidates():
+    ollama = FakeOllama()
+
+    run(EvaluationPipeline(ollama), make_payload(judge_cloud=True))
+
+    assert ollama.unloaded == ["cand-a", "cand-b"]
+    assert ollama.loads["cand-a"] == 1
+    assert ollama.loads["cand-b"] == 1
+
+
+def test_cloud_mode_reports_the_same_events_with_ordered_progress():
+    local_events = run(EvaluationPipeline(FakeOllama()), two_questions())
+
+    events = run(EvaluationPipeline(FakeOllama()), two_questions(judge_cloud=True))
+
+    assert Counter(e["type"] for e in events) == Counter(
+        e["type"] for e in local_events
+    )
+    progress = [e["progress"]["done"] for e in events if "progress" in e]
+    assert progress == sorted(progress)
+    assert events[-2]["progress"] == {"done": 11, "total": 11}
+    for question in ("q1", "q2"):
+        reference_done = next(
+            i
+            for i, e in enumerate(events)
+            if e["type"] == "reference_done" and e["question"] == question
+        )
+        first_grading = next(
+            i
+            for i, e in enumerate(events)
+            if e["type"] == "grading_start" and e["question"] == question
+        )
+        assert reference_done < first_grading
+
+
+def test_cloud_mode_reraises_worker_errors():
+    ollama = FakeOllama(references=[RuntimeError("boom")])
+
+    with pytest.raises(RuntimeError, match="boom"):
+        run(EvaluationPipeline(ollama), make_payload(judge_cloud=True))
+
+    assert "cand-a" not in ollama.loaded
+
+
+def test_cloud_mode_reports_grading_failures():
+    ollama = FakeOllama(grades=[fail("timeout")] * 3)
+    pipeline = EvaluationPipeline(ollama)
+
+    run(pipeline, make_payload(candidates=["cand-a"], judge_cloud=True))
+
+    cand_a = results_by_model(pipeline)["cand-a"]
+    assert (cand_a["status"], cand_a["error"]) == ("judge_error", "timeout")

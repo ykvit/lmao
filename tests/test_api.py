@@ -217,6 +217,7 @@ def test_evaluate_rejects_non_json_request(client):
         {"test_cases": [{"question": "Q", "tag": 5}]},
         {"test_cases": [{"question": "Q", "reference": None}]},
         {"base_rationale": 5},
+        {"judge_cloud": "yes"},
     ],
 )
 def test_evaluate_rejects_invalid_payload(client, overrides):
@@ -256,6 +257,13 @@ def test_evaluate_starts_background_task(client, installed_models):
     assert kwargs["args"] == (task_id, payload)
     assert thread_cls.return_value.daemon is True
     thread_cls.return_value.start.assert_called_once_with()
+
+
+def test_evaluate_accepts_the_cloud_judge_flag(client, installed_models):
+    with patch.object(app_module.threading, "Thread"):
+        response = client.post("/api/evaluate", json=_payload(judge_cloud=True))
+
+    assert response.status_code == 202
 
 
 @pytest.mark.parametrize(

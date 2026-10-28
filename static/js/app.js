@@ -118,6 +118,7 @@ async function startEvaluation(e) {
 
     const payload = {
         judge: document.getElementById('judgeModel').value,
+        judge_cloud: document.getElementById('judgeCloud').checked,
         candidates: candidates,
         base_rationale: document.getElementById('baseRationale').value.trim(),
         test_cases: testCases
@@ -157,6 +158,8 @@ function monitorSSE(taskId) {
     const stepId = (...parts) => 'step-' + parts.join('-').replace(/[^a-zA-Z0-9]/g, '-');
 
     const openBlock = (title) => {
+        // In cloud mode the phases overlap, so the log stays flat.
+        if (cloud) return;
         currentBlock = document.createElement('div');
         currentBlock.className = 'log-case-block';
         currentBlock.innerHTML = `<div class="log-case-title">${escapeHtml(title)}</div>`;

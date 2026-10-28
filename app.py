@@ -80,6 +80,8 @@ def _validate_payload(data: dict) -> str | None:
         for field in _OPTIONAL_TEXT_FIELDS
     ):
         return "Text fields must be strings."
+    if not isinstance(data.get("judge_cloud", False), bool):
+        return "Field 'judge_cloud' must be a boolean."
     return None
 
 
@@ -173,9 +175,10 @@ def get_models():
 def start_evaluation():
     """Starts a new asynchronous evaluation task.
 
-    Expects a JSON payload with judge, candidates, an optional base_rationale
-    and a list of test_cases (question, optional tag, specific_rationale and
-    reference). Every model must be installed in Ollama.
+    Expects a JSON payload with judge, candidates, an optional base_rationale,
+    an optional judge_cloud flag (parallel grading by a cloud judge) and a list
+    of test_cases (question, optional tag, specific_rationale and reference).
+    Every model must be installed in Ollama.
 
     Returns:
         Response: A JSON response containing the generated task_id and status,

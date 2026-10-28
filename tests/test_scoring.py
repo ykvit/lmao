@@ -226,3 +226,9 @@ def test_recommend_without_graded_models_recommends_nothing(models):
         "rule": RULE_NONE_GRADED,
         "confidence": CONFIDENCE_LOW,
     }
+
+
+def test_recommend_copes_with_a_qualified_model_without_timings():
+    models = [_stats("a", time_sec=None), _stats("b", time_sec=3.0)]
+
+    assert recommend(models)["model"] == "b"

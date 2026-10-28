@@ -18,7 +18,10 @@ done <<< "$IMAGE_TAGS"
 
 [[ ${#args[@]} -gt 0 ]] || die "No release tags provided."
 
-docker buildx imagetools create "${args[@]}" "$IMAGE_SOURCE"
+# --prefer-index=false: with a single non-index source, create would wrap
+# the manifest in a manifest list and change the digest; this keeps the
+# copy byte-identical so the digest check below holds.
+docker buildx imagetools create --prefer-index=false "${args[@]}" "$IMAGE_SOURCE"
 
 while IFS= read -r tag; do
     [[ -n "$tag" ]] || continue

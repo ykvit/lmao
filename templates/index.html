@@ -1,14 +1,154 @@
 {% extends "base.html" %}
 
-{# Step 1 shell: panels are empty placeholders, filled in steps 2-6. #}
-
 {% block setup %}
-<div class="text-fg-muted">setup</div>
+<form @submit.prevent="submit()" novalidate
+      class="min-h-full flex flex-col justify-between gap-22">
+
+    <div class="flex flex-col gap-22">
+
+        {# 01 judge model #}
+        <div class="flex flex-col gap-8">
+            <label class="flex flex-col gap-8">
+                <span class="text-fg-muted">01 judge model</span>
+                <span class="relative block">
+                    <select x-model="judge" :disabled="models.length === 0"
+                            class="w-full appearance-none bg-bg border border-line pl-12 pr-36 py-10 text-fg focus:border-fg outline-none disabled:text-fg-muted">
+                        <option value="" disabled class="bg-bg">select judge</option>
+                        <template x-for="m in models" :key="m">
+                            <option :value="m" x-text="shortName(m)" :title="m" class="bg-bg"></option>
+                        </template>
+                    </select>
+                    <svg class="absolute right-12 top-1/2 -translate-y-1/2 pointer-events-none"
+                         width="12" height="12" viewBox="0 0 12 12" fill="none"
+                         stroke="#b2b2b2" aria-hidden="true">
+                        <path d="M2 4l4 4 4-4"/>
+                    </svg>
+                </span>
+            </label>
+
+            {# checkbox-row: cloud judge #}
+            <label class="flex items-start gap-12 py-11 border-b border-line cursor-pointer">
+                <input type="checkbox" x-model="judgeCloud" class="peer sr-only">
+                <span class="mt-4 size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
+                        <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
+                    </svg>
+                </span>
+                <span class="flex flex-col">
+                    <span class="text-fg-muted peer-checked:text-fg">cloud judge</span>
+                    <span class="text-fg-muted">grades in parallel. prompts and answers leave this machine.</span>
+                </span>
+            </label>
+        </div>
+
+        {# 02 candidates #}
+        <div class="flex flex-col gap-0" role="group" aria-labelledby="candidates-label">
+            <div id="candidates-label" class="pb-8 border-b border-line text-fg-muted">02 candidates</div>
+
+            <div x-show="modelsLoaded && models.length === 0" x-cloak
+                 class="pt-12 flex flex-col gap-8 text-warn" role="alert">
+                <span>no models found. is ollama running?</span>
+                <button type="button" @click="loadModels()"
+                        class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
+            </div>
+
+            <div class="max-h-240 overflow-y-auto">
+                <template x-for="m in models" :key="m">
+                    {# checkbox-row #}
+                    <label class="flex items-center gap-12 py-11 border-b border-line cursor-pointer">
+                        <input type="checkbox" :value="m" x-model="selected" class="peer sr-only">
+                        <span class="size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
+                                <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
+                            </svg>
+                        </span>
+                        <span class="min-w-0 break-words text-fg-muted peer-checked:text-fg"
+                              x-text="shortName(m)" :title="m"></span>
+                    </label>
+                </template>
+            </div>
+        </div>
+
+        {# 03 judge criteria #}
+        <label class="flex flex-col gap-8">
+            <span class="text-fg-muted">03 judge criteria (optional)</span>
+            <textarea x-model="baseRationale" rows="3"
+                      placeholder="applied to every question"
+                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
+        </label>
+
+        {# 04 test cases #}
+        <div class="flex flex-col gap-12">
+            <div class="pb-8 border-b border-line text-fg-muted">04 test cases</div>
+
+            <template x-for="(c, i) in cases" :key="c.id">
+                <div>
+                    {# expanded #}
+                    <div x-show="c.open" class="border border-line p-15 flex flex-col gap-12">
+                        <div class="flex justify-between items-center">
+                            <span x-text="'case ' + pad2(i)"></span>
+                            <span class="flex items-center gap-15">
+                                <button type="button" x-show="c.question.trim()" @click="c.open = false"
+                                        class="text-fg-muted hover:text-fg">collapse</button>
+                                <button type="button" x-show="cases.length > 1" @click="removeCase(c.id)"
+                                        class="text-fg-muted hover:text-fg">remove</button>
+                            </span>
+                        </div>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">tag (optional)</span>
+                            <input type="text" x-model="c.tag" placeholder="e.g. python"
+                                   class="w-full bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none">
+                        </label>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">question</span>
+                            <textarea x-model="c.question" rows="3"
+                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
+                        </label>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">specific criteria (optional)</span>
+                            <textarea x-model="c.rationale" rows="2"
+                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
+                        </label>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">reference answer (optional)</span>
+                            <textarea x-model="c.reference" rows="2"
+                                      placeholder="if empty, the judge writes one"
+                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
+                        </label>
+                    </div>
+
+                    {# collapsed #}
+                    <div x-show="!c.open" class="border border-line px-15 py-12 flex items-center gap-15">
+                        <span x-text="'case ' + pad2(i)"></span>
+                        <span class="flex-1 min-w-0 truncate text-fg-muted"
+                              x-text="c.tag.trim() || c.question.trim()"></span>
+                        <button type="button" @click="c.open = true"
+                                class="text-fg-muted hover:text-fg">edit</button>
+                    </div>
+                </div>
+            </template>
+
+            <button type="button" @click="addCase()"
+                    class="w-full text-left border border-fg-muted text-fg px-22 py-13 hover:border-fg">+ add test case</button>
+        </div>
+    </div>
+
+    <div class="flex flex-col gap-12">
+        <div x-show="formError" x-cloak role="alert"
+             class="border border-warn px-15 py-12 text-warn" x-text="formError"></div>
+        <button type="submit" :disabled="submitting || view === 'running'"
+                class="w-full text-left bg-fg text-bg px-22 py-13 hover:bg-fg-muted disabled:bg-line disabled:text-fg-muted disabled:cursor-not-allowed">run evaluation</button>
+    </div>
+</form>
 {% endblock %}
 
 {% block main %}
 <div x-show="view === 'idle'" x-cloak class="text-fg-muted">
     select models, add test cases and press run evaluation.
+</div>
+{# Placeholder until step 4 (running screen). #}
+<div x-show="view === 'running'" x-cloak class="text-fg-muted">
+    run <span x-text="run.id"></span> started. the progress screen comes in the next step.
 </div>
 {% endblock %}
 

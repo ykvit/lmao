@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="lmao logo" width="120">
+<img src="docs/assets/logo.svg" alt="lmao logo" width="200">
 
 # lmao
 
@@ -8,15 +8,15 @@
 
 Benchmark local LLMs with [Ollama](https://ollama.com): blind grading against a reference, plus speed, ending in a recommendation.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/ci.yml?branch=main&style=flat-square&label=ci)](.github/workflows/ci.yml)
-[![Release build](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/release.yml?branch=main&style=flat-square&label=build)](https://github.com/ykvit/lmao/actions/workflows/release.yml)
-[![Security](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/security.yml?branch=main&style=flat-square&label=security)](https://github.com/ykvit/lmao/actions/workflows/security.yml)
 [![Release](https://img.shields.io/github/v/release/ykvit/lmao?style=flat-square)](https://github.com/ykvit/lmao/releases)
+![Python](https://img.shields.io/badge/python-3.14-3776AB?style=flat-square&logo=python&logoColor=white)
+![License: MIT](https://img.shields.io/github/license/ykvit/lmao?style=flat-square)
+[![CI](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/ci.yml?branch=main&style=flat-square&label=ci)](.github/workflows/ci.yml)
+[![Security](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/security.yml?branch=main&style=flat-square&label=security)](https://github.com/ykvit/lmao/actions/workflows/security.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://docs.astral.sh/ruff/)
+[![Release build](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/release.yml?branch=main&style=flat-square&label=build)](https://github.com/ykvit/lmao/actions/workflows/release.yml)
 [![ghcr.io](https://img.shields.io/badge/ghcr.io-ykvit%2Flmao-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/ykvit/lmao/pkgs/container/lmao)
 [![Ollama](https://img.shields.io/badge/llm%20runtime-Ollama-00b4d8?style=flat-square&logo=ollama&logoColor=black)](https://ollama.com)
-![Python](https://img.shields.io/badge/python-3.14-3776AB?style=flat-square&logo=python&logoColor=white)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://docs.astral.sh/ruff/)
-![License: MIT](https://img.shields.io/github/license/ykvit/lmao?style=flat-square)
 
 </div>
 

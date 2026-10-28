@@ -2,7 +2,8 @@ name: Release
 
 # Every push to main builds and verifies the production image once.
 # If pyproject.toml carries a version without a tag yet, that same image
-# (same digest) is copied to GHCR, attested, and the GitHub Release creates the tag.
+# (same digest) is copied to GHCR, its provenance attested in the GitHub
+# Attestations API, and the GitHub Release creates the tag.
 
 on:
   push:
@@ -100,8 +101,12 @@ jobs:
           push: true
           tags: ${{ env.STAGING_IMAGE }}:candidate
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max
-          sbom: true
+          # Plain image manifest, no BuildKit attestation referrers in the
+          # registry: provenance lives in the GitHub Attestations API only
+          # (see the attest step below). Explicit false because BuildKit
+          # attaches mode=min provenance by default on push.
+          provenance: false
+          sbom: false
           cache-from: type=gha,version=2,scope=lmao-production
           cache-to: type=gha,version=2,scope=lmao-production,mode=max,ignore-error=true
 
@@ -140,7 +145,9 @@ jobs:
         with:
           subject-name: ${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+          # push-to-registry stays false (the default): the attestation is
+          # stored in the GitHub Attestations API only, verifiable with
+          # gh attestation verify, and GHCR keeps no referrer manifests.
 
       - name: Write summary
         env:

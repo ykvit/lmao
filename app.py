@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request
 from werkzeug.utils import secure_filename
 
-from core.evaluator import EvaluationPipeline
+from core.evaluator import SCHEMA_VERSION, EvaluationPipeline
 from core.ollama_client import OllamaClient
 
 load_dotenv()
@@ -31,6 +31,7 @@ ollama_client = OllamaClient()
 pipeline = EvaluationPipeline(ollama_client)
 
 _SAFE_TAG_RE = re.compile(r"[^a-zA-Z0-9_-]")
+_OPTIONAL_TEXT_FIELDS = ("tag", "specific_rationale", "reference")
 
 
 def _sanitize_tag(tag, fallback="run", max_length=40):
@@ -39,6 +40,49 @@ def _sanitize_tag(tag, fallback="run", max_length=40):
         return fallback
     cleaned = _SAFE_TAG_RE.sub("_", tag.strip())[:max_length]
     return cleaned or fallback
+
+
+def _validate_payload(data: dict) -> str | None:
+    """Checks the shape of an evaluation request.
+
+    Args:
+        data (dict): The parsed JSON payload.
+
+    Returns:
+        str | None: A description of the first problem, or None if valid.
+    """
+    judge = data.get("judge")
+    candidates = data.get("candidates")
+    test_cases = data.get("test_cases")
+
+    if not isinstance(judge, str) or not judge:
+        return "Field 'judge' must be a model name."
+    if (
+        not isinstance(candidates, list)
+        or not candidates
+        or not all(isinstance(model, str) and model for model in candidates)
+    ):
+        return "Field 'candidates' must be a non-empty list of model names."
+    if (
+        not isinstance(test_cases, list)
+        or not test_cases
+        or not all(
+            isinstance(case, dict)
+            and isinstance(case.get("question"), str)
+            and case["question"].strip()
+            for case in test_cases
+        )
+    ):
+        return "Field 'test_cases' must be a non-empty list of objects with a question."
+    if not isinstance(data.get("base_rationale", ""), str) or not all(
+        isinstance(case.get(field, ""), str)
+        for case in test_cases
+        for field in _OPTIONAL_TEXT_FIELDS
+    ):
+        return "Text fields must be strings."
+    if not isinstance(data.get("judge_cloud", False), bool):
+        return "Field 'judge_cloud' must be a boolean."
+    return None
 
 
 def update_task_status(task_id: str, payload: dict) -> None:
@@ -54,6 +98,56 @@ def update_task_status(task_id: str, payload: dict) -> None:
 
         if payload.get("type") in ["completed", "error"]:
             TASKS[task_id]["status"] = payload.get("type")
+
+
+def _run_task(task_id: str, payload: dict) -> None:
+    """Runs the pipeline in a worker thread and reports a crash to the stream.
+
+    Without this, an exception would end the thread silently and the SSE stream
+    would wait forever for a final event.
+    """
+    try:
+        pipeline.run_evaluation(task_id, payload, update_task_status)
+    except Exception as e:
+        update_task_status(
+            task_id, {"type": "error", "message": f"Evaluation failed: {e}"}
+        )
+
+
+def _read_json(path: str) -> dict | None:
+    """Reads a JSON object from disk, or None if it is missing or unreadable."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except OSError:
+        return None
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _read_run(task_id: str) -> dict | None:
+    """Reads the results of a run, or None if it is missing or not schema v2."""
+    path = os.path.join(pipeline.history_dir, task_id, "evaluation_results.json")
+    data = _read_json(path)
+    if data is None or data.get("schema_version") != SCHEMA_VERSION:
+        return None
+    return data
+
+
+def _parse_task_id(task_id: str) -> tuple[str, str]:
+    """Splits run_{tag}_{YYYYMMDD}_{HHMMSS} into a readable tag and timestamp."""
+    parts = task_id.split("_")
+    if len(parts) < 4:
+        return task_id, "Unknown"
+
+    tag_name = "_".join(parts[1:-2]).replace("_", " ").title()
+    date_str, time_str = parts[-2], parts[-1]
+    try:
+        moment = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
+    except ValueError:
+        return tag_name, f"{date_str} {time_str}"
+    return tag_name, moment.strftime("%Y-%m-%d %H:%M")
 
 
 @app.route("/", methods=["GET"])
@@ -81,20 +175,35 @@ def get_models():
 def start_evaluation():
     """Starts a new asynchronous evaluation task.
 
-    Expects a JSON payload containing judge, candidates, base_rationale,
-    and a list of test_cases.
+    Expects a JSON payload with judge, candidates, an optional base_rationale,
+    an optional judge_cloud flag (parallel grading by a cloud judge) and a list
+    of test_cases (question, optional tag, specific_rationale and reference).
+    Every model must be installed in Ollama.
 
     Returns:
-        Response: A JSON response containing the generated task_id and status.
+        Response: A JSON response containing the generated task_id and status,
+            or a 400 response describing what is wrong with the payload.
     """
     data = request.json
-    if not data:
+    if not isinstance(data, dict) or not data:
         return jsonify({"error": "Invalid JSON payload"}), 400
 
-    test_cases = data.get("test_cases", [])
-    first_tag = test_cases[0].get("tag", "run") if test_cases else "run"
-    first_tag = _sanitize_tag(first_tag)
+    error = _validate_payload(data)
+    if error:
+        return jsonify({"error": error}), 400
 
+    installed = ollama_client.get_models()
+    missing = [
+        model
+        for model in dict.fromkeys([data["judge"], *data["candidates"]])
+        if model not in installed
+    ]
+    if missing:
+        return jsonify(
+            {"error": f"Models are not installed: {', '.join(missing)}."}
+        ), 400
+
+    first_tag = _sanitize_tag(data["test_cases"][0].get("tag", "run"))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     task_id = f"run_{first_tag}_{timestamp}"
 
@@ -105,9 +214,7 @@ def start_evaluation():
     }
 
     # Start the evaluation pipeline in a background thread.
-    thread = threading.Thread(
-        target=pipeline.run_evaluation, args=(task_id, data, update_task_status)
-    )
+    thread = threading.Thread(target=_run_task, args=(task_id, data))
     thread.daemon = True
     thread.start()
 
@@ -153,64 +260,31 @@ def stream_status(task_id: str):
 def get_history():
     """Retrieves a list of all past evaluations stored on disk.
 
-    Parses the directory names and evaluation_results.json to extract
-    rich metadata including readable timestamps, judge name, and counts.
+    Runs that are not schema v2 (old format, corrupted files) are skipped.
 
     Returns:
         Response: A JSON list of historical run metadata, sorted by newest first.
     """
-    history_dir = "history"
-    if not os.path.exists(history_dir):
+    if not os.path.isdir(pipeline.history_dir):
         return jsonify([])
 
     runs = []
-    for task_id in os.listdir(history_dir):
-        task_path = os.path.join(history_dir, task_id)
-        if os.path.isdir(task_path):
-            results_path = os.path.join(task_path, "evaluation_results.json")
-            if os.path.exists(results_path):
-                try:
-                    with open(results_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+    for task_id in os.listdir(pipeline.history_dir):
+        data = _read_run(task_id)
+        if data is None:
+            continue
 
-                        # Parse task_id format: run_{tag}_{YYYYMMDD}_{HHMMSS}
-                        parts = task_id.split("_")
-                        if len(parts) >= 4:
-                            tag_name = "_".join(parts[1:-2]).replace("_", " ").title()
-                            date_str = parts[-2]
-                            time_str = parts[-1]
-                            try:
-                                dt = datetime.strptime(
-                                    f"{date_str}_{time_str}", "%Y%m%d_%H%M%S"
-                                )
-                                timestamp = dt.strftime("%Y-%m-%d %H:%M")
-                            except ValueError:
-                                timestamp = f"{date_str} {time_str}"
-                        else:
-                            tag_name = task_id
-                            timestamp = "Unknown"
-
-                        # Extract counts and judge
-                        questions = data.get("questions_results", [])
-                        q_count = len(questions)
-                        # Find max models tested across questions
-                        models_count = (
-                            len(questions[0].get("results", [])) if q_count > 0 else 0
-                        )
-                        judge_model = data.get("judge_model", "Unknown Judge")
-
-                        runs.append(
-                            {
-                                "task_id": task_id,
-                                "tag_name": tag_name,
-                                "timestamp": timestamp,
-                                "models_tested": models_count,
-                                "questions_count": q_count,
-                                "judge_model": judge_model,
-                            }
-                        )
-                except Exception:
-                    pass  # Silently skip corrupted directories
+        tag_name, timestamp = _parse_task_id(task_id)
+        runs.append(
+            {
+                "task_id": task_id,
+                "tag_name": tag_name,
+                "timestamp": timestamp,
+                "models_tested": len(data["summary"]["models"]),
+                "questions_count": len(data["questions_results"]),
+                "judge_model": data["judge_model"],
+            }
+        )
 
     # Sort by task_id descending (newest first).
     runs.sort(key=lambda x: x["task_id"], reverse=True)
@@ -219,75 +293,32 @@ def get_history():
 
 @app.route("/api/results/<task_id>", methods=["GET"])
 def get_results(task_id: str):
-    """Fetches and formats the results of a specific task for frontend rendering.
+    """Returns the saved results of a run together with its technical metrics.
 
-    Groups the questions and judge scores by the candidate model name, making it
-    easier for the UI to build per-model comparison cards. Explicitly propagates
-    errors if the judge evaluation failed.
+    The body is the content of evaluation_results.json (questions_results with
+    per-model answers and grades, plus the summary) and a `metrics` object keyed
+    by model name. The client groups it per model or per question.
 
     Args:
         task_id (str): The unique identifier of the completed task.
 
     Returns:
-        Response: A JSON object containing the formatted results and metrics.
+        Response: A JSON object with the results and metrics.
     """
     safe_task_id = secure_filename(task_id)
     if not safe_task_id or safe_task_id != task_id:
         return jsonify({"error": "Invalid task_id"}), 400
 
-    history_dir = os.path.join("history", safe_task_id)
-    metrics_path = os.path.join(history_dir, "technical_metrics.json")
-    results_path = os.path.join(history_dir, "evaluation_results.json")
-
-    if not os.path.exists(results_path):
+    results = _read_run(safe_task_id)
+    if results is None:
         return jsonify({"error": "Results not found or not ready"}), 404
 
-    with open(metrics_path, "r", encoding="utf-8") as f:
-        metrics_data = json.load(f)
+    metrics_path = os.path.join(
+        pipeline.history_dir, safe_task_id, "technical_metrics.json"
+    )
+    metrics = (_read_json(metrics_path) or {}).get("metrics", {})
 
-    with open(results_path, "r", encoding="utf-8") as f:
-        results_data = json.load(f)
-
-    merged_models = {}
-    for q_data in results_data.get("questions_results", []):
-        question_text = q_data.get("question")
-        tag = q_data.get("tag", "General")
-
-        for res in q_data.get("results", []):
-            m_name = res.get("model_name")
-            if not m_name:
-                continue
-
-            if m_name not in merged_models:
-                merged_models[m_name] = {
-                    "model_name": m_name,
-                    "metrics": metrics_data.get("metrics", {}).get(m_name, {}),
-                    "evaluations": [],
-                }
-
-            # Explicitly append the error field if it exists to notify the UI
-            merged_models[m_name]["evaluations"].append(
-                {
-                    "tag": tag,
-                    "question": question_text,
-                    "clean_answer": res.get("clean_answer", "Error/Empty"),
-                    "error": res.get("error"),
-                    "judge_evaluation": res.get(
-                        "judge_evaluation",
-                        {"score": 0, "comment": "No evaluation provided."},
-                    ),
-                }
-            )
-
-    return jsonify(
-        {
-            "task_id": safe_task_id,
-            "final_summary": results_data.get(
-                "final_summary", "Summary not available."
-            ),
-            "results": list(merged_models.values()),
-        }
-    ), 200
+    return jsonify({**results, "metrics": metrics}), 200
 
 
 @app.route("/health")

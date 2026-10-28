@@ -30,6 +30,38 @@ def _parse_sse(response):
     ]
 
 
+def _run(judge="judge-model", models=("m1", "m2"), questions=2):
+    """The parts of a schema v2 evaluation_results.json the API reads."""
+    return {
+        "schema_version": 2,
+        "judge_model": judge,
+        "questions_results": [
+            {"id": f"q{number}", "results": []} for number in range(1, questions + 1)
+        ],
+        "summary": {
+            "models": [{"model": model} for model in models],
+            "recommendation": {},
+            "text": "",
+        },
+    }
+
+
+def _payload(**overrides):
+    payload = {
+        "judge": "j",
+        "candidates": ["m"],
+        "test_cases": [{"tag": "My Tag!", "question": "Q"}],
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.fixture
+def installed_models():
+    with patch.object(app_module.ollama_client, "get_models", return_value=["j", "m"]):
+        yield
+
+
 # --- health and index -------------------------------------------------------
 
 
@@ -102,6 +134,29 @@ def test_update_task_status_ignores_unknown_task():
     assert app_module.TASKS == {}
 
 
+def test_run_task_runs_the_pipeline():
+    with patch.object(app_module.pipeline, "run_evaluation") as run_evaluation:
+        app_module._run_task("t", {"judge": "j"})
+
+    run_evaluation.assert_called_once_with(
+        "t", {"judge": "j"}, app_module.update_task_status
+    )
+
+
+def test_run_task_reports_a_crash_to_the_stream():
+    app_module.TASKS["t"] = {"status": "started", "events": []}
+
+    with patch.object(
+        app_module.pipeline, "run_evaluation", side_effect=RuntimeError("boom")
+    ):
+        app_module._run_task("t", {})
+
+    [event] = app_module.TASKS["t"]["events"]
+    assert event["type"] == "error"
+    assert "boom" in event["message"]
+    assert app_module.TASKS["t"]["status"] == "error"
+
+
 # --- /api/models ------------------------------------------------------------
 
 
@@ -133,18 +188,57 @@ def test_evaluate_rejects_empty_payload(client):
     assert response.get_json() == {"error": "Invalid JSON payload"}
 
 
+def test_evaluate_rejects_non_object_payload(client):
+    response = client.post("/api/evaluate", json=[1, 2])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid JSON payload"}
+
+
 def test_evaluate_rejects_non_json_request(client):
     response = client.post("/api/evaluate", data="not json")
 
     assert response.status_code == 415
 
 
-def test_evaluate_starts_background_task(client):
-    payload = {
-        "judge": "j",
-        "candidates": ["m"],
-        "test_cases": [{"tag": "My Tag!", "question": "Q"}],
-    }
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"judge": None},
+        {"judge": ""},
+        {"judge": 5},
+        {"candidates": []},
+        {"candidates": "m"},
+        {"candidates": [1]},
+        {"test_cases": []},
+        {"test_cases": ["Q"]},
+        {"test_cases": [{"question": "  "}]},
+        {"test_cases": [{"question": 5}]},
+        {"test_cases": [{"question": "Q", "tag": 5}]},
+        {"test_cases": [{"question": "Q", "reference": None}]},
+        {"base_rationale": 5},
+        {"judge_cloud": "yes"},
+    ],
+)
+def test_evaluate_rejects_invalid_payload(client, overrides):
+    response = client.post("/api/evaluate", json=_payload(**overrides))
+
+    assert response.status_code == 400
+    assert response.get_json()["error"]
+    assert app_module.TASKS == {}
+
+
+def test_evaluate_rejects_models_that_are_not_installed(client):
+    with patch.object(app_module.ollama_client, "get_models", return_value=["j"]):
+        response = client.post("/api/evaluate", json=_payload())
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Models are not installed: m."}
+    assert app_module.TASKS == {}
+
+
+def test_evaluate_starts_background_task(client, installed_models):
+    payload = _payload()
 
     with patch.object(app_module.threading, "Thread") as thread_cls:
         response = client.post("/api/evaluate", json=payload)
@@ -159,20 +253,28 @@ def test_evaluate_starts_background_task(client):
 
     thread_cls.assert_called_once()
     kwargs = thread_cls.call_args.kwargs
-    assert kwargs["target"] == app_module.pipeline.run_evaluation
-    assert kwargs["args"] == (task_id, payload, app_module.update_task_status)
+    assert kwargs["target"] == app_module._run_task
+    assert kwargs["args"] == (task_id, payload)
     assert thread_cls.return_value.daemon is True
     thread_cls.return_value.start.assert_called_once_with()
 
 
-@pytest.mark.parametrize("test_cases", [None, [], [{"tag": 123}], [{"tag": "  "}]])
-def test_evaluate_uses_default_tag_when_none_is_usable(client, test_cases):
-    payload = {"judge": "j", "candidates": ["m"]}
-    if test_cases is not None:
-        payload["test_cases"] = test_cases
-
+def test_evaluate_accepts_the_cloud_judge_flag(client, installed_models):
     with patch.object(app_module.threading, "Thread"):
-        response = client.post("/api/evaluate", json=payload)
+        response = client.post("/api/evaluate", json=_payload(judge_cloud=True))
+
+    assert response.status_code == 202
+
+
+@pytest.mark.parametrize(
+    "test_cases",
+    [[{"question": "Q"}], [{"question": "Q", "tag": "  "}]],
+)
+def test_evaluate_uses_default_tag_when_none_is_usable(
+    client, installed_models, test_cases
+):
+    with patch.object(app_module.threading, "Thread"):
+        response = client.post("/api/evaluate", json=_payload(test_cases=test_cases))
 
     assert response.status_code == 202
     assert re.fullmatch(r"run_run_\d{8}_\d{6}", response.get_json()["task_id"])
@@ -228,13 +330,7 @@ def test_history_is_empty_without_history_directory(client):
 def test_history_lists_run_metadata(client):
     _write_json(
         Path("history/run_python_test_20260101_120000/evaluation_results.json"),
-        {
-            "judge_model": "judge-model",
-            "questions_results": [
-                {"results": [{}, {}]},
-                {"results": [{}, {}]},
-            ],
-        },
+        _run(),
     )
 
     response = client.get("/api/history")
@@ -253,10 +349,7 @@ def test_history_lists_run_metadata(client):
 
 def test_history_is_sorted_newest_first(client):
     for task_id in ("run_a_20260101_000000", "run_a_20260102_000000"):
-        _write_json(
-            Path("history") / task_id / "evaluation_results.json",
-            {"questions_results": []},
-        )
+        _write_json(Path("history") / task_id / "evaluation_results.json", _run())
 
     response = client.get("/api/history")
 
@@ -266,28 +359,27 @@ def test_history_is_sorted_newest_first(client):
     ]
 
 
-def test_history_uses_defaults_for_sparse_or_oddly_named_runs(client):
-    _write_json(Path("history/weird/evaluation_results.json"), {})
-    _write_json(
-        Path("history/run_x_notadate_nottime/evaluation_results.json"),
-        {"questions_results": []},
-    )
+def test_history_copes_with_oddly_named_runs(client):
+    _write_json(Path("history/weird/evaluation_results.json"), _run())
+    _write_json(Path("history/run_x_notadate_nottime/evaluation_results.json"), _run())
 
     runs = {run["task_id"]: run for run in client.get("/api/history").get_json()}
 
-    assert runs["weird"] == {
-        "task_id": "weird",
-        "tag_name": "weird",
-        "timestamp": "Unknown",
-        "models_tested": 0,
-        "questions_count": 0,
-        "judge_model": "Unknown Judge",
-    }
+    assert runs["weird"]["tag_name"] == "weird"
+    assert runs["weird"]["timestamp"] == "Unknown"
     assert runs["run_x_notadate_nottime"]["tag_name"] == "X"
     assert runs["run_x_notadate_nottime"]["timestamp"] == "notadate nottime"
 
 
-def test_history_skips_corrupted_and_incomplete_entries(client):
+def test_history_skips_legacy_corrupted_and_incomplete_entries(client):
+    _write_json(
+        Path("history/run_old_20260101_000000/evaluation_results.json"),
+        {"questions_results": []},
+    )
+    _write_json(
+        Path("history/run_v1_20260101_000000/evaluation_results.json"),
+        {**_run(), "schema_version": 1},
+    )
     broken = Path("history/run_broken_20260101_000000/evaluation_results.json")
     broken.parent.mkdir(parents=True)
     broken.write_text("{not json", encoding="utf-8")
@@ -317,86 +409,42 @@ def test_results_returns_404_when_run_is_missing(client):
     assert response.get_json() == {"error": "Results not found or not ready"}
 
 
-def test_results_groups_evaluations_by_model(client):
+def test_results_returns_the_run_with_metrics(client):
     task_id = "run_x_20260101_000000"
     run_dir = Path("history") / task_id
+    data = _run()
+    _write_json(run_dir / "evaluation_results.json", data)
     _write_json(
         run_dir / "technical_metrics.json",
-        {
-            "task_id": task_id,
-            "metrics": {
-                "m1": {"tokens_per_second": 10.0},
-                "m2": {"tokens_per_second": 20.0},
-            },
-        },
-    )
-    questions = []
-    for number in (1, 2):
-        questions.append(
-            {
-                "tag": f"t{number}",
-                "question": f"Q{number}",
-                "results": [
-                    {
-                        "model_name": "m1",
-                        "clean_answer": f"A{number}",
-                        "judge_evaluation": {"score": 90, "comment": "good"},
-                    },
-                    {
-                        "model_name": "m2",
-                        "clean_answer": f"B{number}",
-                        "error": "judge failed",
-                        "judge_evaluation": {"score": 0, "comment": "SYSTEM ERROR"},
-                    },
-                ],
-            }
-        )
-    _write_json(
-        run_dir / "evaluation_results.json",
-        {"final_summary": "## done", "questions_results": questions},
+        {"task_id": task_id, "metrics": {"m1": {"tokens_per_second": 10.0}}},
     )
 
     response = client.get(f"/api/results/{task_id}")
 
     assert response.status_code == 200
-    body = response.get_json()
-    assert body["task_id"] == task_id
-    assert body["final_summary"] == "## done"
-    m1, m2 = body["results"]
-    assert (m1["model_name"], m2["model_name"]) == ("m1", "m2")
-    assert m1["metrics"] == {"tokens_per_second": 10.0}
-    assert [e["question"] for e in m1["evaluations"]] == ["Q1", "Q2"]
-    assert m1["evaluations"][0] == {
-        "tag": "t1",
-        "question": "Q1",
-        "clean_answer": "A1",
-        "error": None,
-        "judge_evaluation": {"score": 90, "comment": "good"},
+    assert response.get_json() == {
+        **data,
+        "metrics": {"m1": {"tokens_per_second": 10.0}},
     }
-    assert m2["evaluations"][0]["error"] == "judge failed"
 
 
-def test_results_fills_defaults_and_skips_entries_without_model(client):
+def test_results_work_without_technical_metrics(client):
     task_id = "run_x_20260101_000000"
-    run_dir = Path("history") / task_id
-    _write_json(run_dir / "technical_metrics.json", {"metrics": {}})
+    _write_json(Path("history") / task_id / "evaluation_results.json", _run())
+
+    response = client.get(f"/api/results/{task_id}")
+
+    assert response.status_code == 200
+    assert response.get_json()["metrics"] == {}
+
+
+def test_results_hide_legacy_runs(client):
+    task_id = "run_x_20260101_000000"
     _write_json(
-        run_dir / "evaluation_results.json",
-        {"questions_results": [{"results": [{"model_name": "m"}, {"foo": "bar"}]}]},
+        Path("history") / task_id / "evaluation_results.json",
+        {"questions_results": []},
     )
 
-    body = client.get(f"/api/results/{task_id}").get_json()
+    response = client.get(f"/api/results/{task_id}")
 
-    assert body["final_summary"] == "Summary not available."
-    [model] = body["results"]
-    assert model["model_name"] == "m"
-    assert model["metrics"] == {}
-    assert model["evaluations"] == [
-        {
-            "tag": "General",
-            "question": None,
-            "clean_answer": "Error/Empty",
-            "error": None,
-            "judge_evaluation": {"score": 0, "comment": "No evaluation provided."},
-        }
-    ]
+    assert response.status_code == 404

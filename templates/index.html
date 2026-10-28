@@ -19,6 +19,7 @@
                     <div class="form-group">
                         <label>Judge Model:</label>
                         <select id="judgeModel" required></select>
+                        <label class="checkbox-label"><input type="checkbox" id="judgeCloud"> Cloud judge (grades in parallel; prompts and answers leave this machine)</label>
                     </div>
 
                     <div class="form-group">
@@ -29,8 +30,8 @@
                     </div>
 
                     <div class="form-group">
-                        <label>Base Prompt (Rationale for Judge):</label>
-                        <textarea id="baseRationale" rows="2" required>Score from 1 to 100. Be objective and strict. 1 is hallucination, 100 is perfect.</textarea>
+                        <label>Judge criteria (Optional):</label>
+                        <textarea id="baseRationale" rows="2" placeholder="Extra criteria applied to every question"></textarea>
                     </div>
                 </div>
 
@@ -49,6 +50,9 @@
                             </div>
                             <div class="form-group">
                                 <textarea class="tc-specific" rows="2" placeholder="Specific Prompt / Rationale (Optional)">Must contain working python code.</textarea>
+                            </div>
+                            <div class="form-group">
+                                <textarea class="tc-reference" rows="2" placeholder="Reference answer (Optional, overrides the judge's)"></textarea>
                             </div>
                         </div>
                     </div>
@@ -80,6 +84,7 @@
             <div id="progressOverlay" class="progress-overlay hidden">
                 <div class="progress-modal">
                     <h2>⚙️ Processing Task...</h2>
+                    <div id="progressText" class="log-item-plain"></div>
                     <ul id="logList" class="log-list">
                         <!-- SSE Real-time logs will be injected here via JavaScript -->
                     </ul>

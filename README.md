@@ -1,105 +1,65 @@
-# Local Model Assessment Operator
+<div align="center">
 
-A web application for benchmarking local LLMs with [Ollama](https://ollama.com). It measures generation performance and scores responses using a judge model.
+<img src="docs/assets/logo.svg" alt="lmao logo" width="120">
 
-## Features
+# lmao
 
-- Dashboard for configuring evaluations and viewing results.
-- Live progress updates via Server-Sent Events.
-- Persistent evaluation history.
-- Sequential model unloading to reduce VRAM usage.
+**Local Model Assessment Operator**
+
+Benchmark local LLMs with [Ollama](https://ollama.com): blind grading against a reference, plus speed, ending in a recommendation.
+
+[![Release build](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/release.yml?branch=main&style=flat-square&label=build)](https://github.com/ykvit/lmao/actions/workflows/release.yml)
+[![Security](https://img.shields.io/github/actions/workflow/status/ykvit/lmao/security.yml?branch=main&style=flat-square&label=security)](https://github.com/ykvit/lmao/actions/workflows/security.yml)
+[![Release](https://img.shields.io/github/v/release/ykvit/lmao?style=flat-square)](https://github.com/ykvit/lmao/releases)
+[![Python](https://img.shields.io/badge/python-3.14-3776AB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://docs.astral.sh/ruff/)
+[![License: MIT](https://img.shields.io/github/license/ykvit/lmao?style=flat-square)](LICENSE)
+
+</div>
+
+## How it works
+
+1. The judge writes a reference answer for each question (or you provide one).
+2. Every candidate answers each question once, one model in VRAM at a time. Thinking is off, answers are capped at 500 words and 1000 tokens.
+3. The judge grades each answer separately and blind (no model names) against the reference: 0-100 in five bands, 70+ is a pass.
+4. Python computes median, pass rate, fails, errors and speed, then recommends the fastest model with a pass rate of at least 80%, otherwise the best median. The judge only writes the summary.
+
+**Cloud judge** (off by default): tick it in the UI to use an Ollama cloud model as the judge. Grading then runs in parallel with generation. Prompts and answers leave your machine, see [SECURITY.md](SECURITY.md).
 
 ## Quick start
 
-Requires Docker with Compose v2, GNU Make, and Bash. NVIDIA Container Toolkit is required only for GPU mode.
+Requires Docker with Compose v2, GNU Make and Bash. NVIDIA Container Toolkit is needed only for GPU mode.
 
 ```bash
-make prod          # CPU
-make prod GPU=1    # NVIDIA GPU
+make prod            # CPU
+make prod GPU=1      # NVIDIA GPU
 ```
 
-Open **http://localhost:5000**. Compose starts both the application and Ollama; a separate Ollama installation is not needed.
-
-Download a candidate model and a judge model:
+Open **http://localhost:5001**. Compose starts the app and Ollama together. Pull a candidate and a judge model (use `compose.dev.yaml` instead of `compose.prod.yaml` in dev):
 
 ```bash
-docker compose -f compose.base.yaml -f compose.prod.yaml exec ollama ollama pull MODEL_NAME
+docker compose -f compose.yaml -f compose.prod.yaml exec ollama ollama pull MODEL_NAME
 ```
 
-Run the command for each model. To stop the environment:
+Stop with `make down ENV=prod`. Run `make help` to list all commands.
 
-```bash
-make down ENV=prod
-```
-
-Run `make help` to list all commands.
+Results are saved in `./history` (dev) or the `history_data` Docker volume (prod).
 
 ## Development
 
 ```bash
-make dev           # Development server with hot reload (GPU=1 for NVIDIA)
-make logs          # Follow logs
-make shell         # Open bash in the app container
-make down          # Stop the environment
+make dev                              # hot reload on http://localhost:5000
+make test                             # tests with coverage
+GH_TOKEN="$(gh auth token)" make ci   # everything GitHub CI runs
 ```
 
-Development history is stored in `./history`; production history is stored in a Docker volume.
-
-### Quality checks
-
-Tools and scanners run through Docker; they do not need to be installed on the host.
+Without Docker you need [uv](https://docs.astral.sh/uv/) and a running Ollama (`OLLAMA_BASE_URL`, see `.env.example`):
 
 ```bash
-make format                           # Fix formatting (changes files)
-make test                             # Run tests with coverage
-make check                            # Run all checks, no token needed
-GH_TOKEN="$(gh auth token)" make ci   # Run exactly what GitHub CI runs
+uv sync --locked && uv run python app.py
 ```
 
-Checks never modify source files. `make check` runs zizmor offline; `make ci` adds online workflow audits and requires `GH_TOKEN`. Trivy uses a daily vulnerability database, so an image can start failing without code changes.
-
-### Cleanup
-
-```bash
-make clean         # Remove reports and caches
-make reset         # Also remove containers and volumes, including production history
-```
-
-Ollama models and `./history` are preserved.
-
-### Running without Docker
-
-To change the Python version, update the `FROM python:` line in the `Dockerfile` and `requires-python` in `pyproject.toml` together; `make check-python` verifies they agree.
-Requires [uv](https://docs.astral.sh/uv/), and a running Ollama instance:
-
-```bash
-uv sync --locked
-uv run python app.py
-```
-
-For a custom Ollama URL, copy `.env.example` to `.env` and edit `OLLAMA_BASE_URL`. Docker Compose does not require this file.
-
-## CI and releases
-
-Pull requests run `check-workflows`, `check-code` and `check-image`, one make target per job. A push to `main` runs the Release workflow: it repeats the code checks, builds the production image once, and tests that exact image (smoke test and Trivy scan).
-
-A release happens when `version` in `pyproject.toml` has no git tag yet. The tested image is then copied to GHCR with the same digest and attested, and the GitHub Release creates the tag `vX.Y.Z`. A push without a version change publishes nothing.
-
-A separate Security workflow runs daily (and on demand): `pip-audit` for locked dependencies, Trivy for the published `latest` and current minor image tags, and an online zizmor audit. Trivy and zizmor results are uploaded to Code scanning. GitHub disables scheduled workflows in a public repository after 60 days without repository activity (Dependabot merges do not count); re-enable it in the Actions tab if that happens. Run the checks locally with `make audit` and `make scan-published`.
-
-### Releasing
-
-```bash
-git switch -c chore/bump-X.Y.Z
-make bump PART=patch        # patch | minor | major
-git commit -am "chore: bump version to X.Y.Z"
-```
-
-Open a PR and merge it. Merging a version bump releases that version, so keep it separate from other changes. `make release-plan` shows which tag the current version would publish.
-
-Prereleases use `make bump PART="patch rc"` (`1.2.3rc1` is published as `v1.2.3-rc.1`) and get only their exact image tag, without floating major or minor tags. `make bump PART=stable` turns a prerelease into the final version.
-
-Dependabot monitors GitHub Actions, uv, Docker images, and the CI tool images in `docker/tools.Dockerfile`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for commits, branches, PRs and releases.
 
 ## License
 

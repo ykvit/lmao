@@ -7,6 +7,7 @@ prompts, which keeps the grading blind.
 """
 
 import json
+import re
 from typing import NamedTuple
 
 MAX_ANSWER_WORDS = 500
@@ -99,6 +100,26 @@ class GradeError(ValueError):
     """Raised when the judge's reply does not satisfy the grading contract."""
 
 
+_FENCE_RE = re.compile(r"^```[a-zA-Z0-9_-]*[ \t]*\n?(.*?)\n?```\s*$", re.DOTALL)
+
+
+def _extract_json(text: str) -> str:
+    """Strips a Markdown fence or chatter around the JSON object.
+
+    Some models (cloud ones among them) ignore the `format` schema and wrap
+    the reply in ```json ... ```. The grade is still validated strictly.
+    """
+    text = text.strip()
+    fenced = _FENCE_RE.match(text)
+    if fenced:
+        text = fenced.group(1).strip()
+    if not text.startswith("{"):
+        start, end = text.find("{"), text.rfind("}")
+        if 0 <= start < end:
+            text = text[start : end + 1]
+    return text
+
+
 def parse_grade(text: str) -> dict:
     """Validates the judge's reply and returns the grade.
 
@@ -113,7 +134,7 @@ def parse_grade(text: str) -> dict:
             unknown category or gives a score outside the category's range.
     """
     try:
-        data = json.loads(text)
+        data = json.loads(_extract_json(text))
     except json.JSONDecodeError as e:
         raise GradeError(f"Invalid JSON: {e}") from e
 

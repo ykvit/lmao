@@ -84,6 +84,28 @@ def test_parse_grade_rejects_invalid_replies(raw):
         parse_grade(raw)
 
 
+_GRADE = '{"comment": "ok", "category": "perfect", "score": 95}'
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        f"```json\n{_GRADE}\n```",
+        f"```\n{_GRADE}\n```\n",
+        f"Here is the grade: {_GRADE} Done.",
+    ],
+)
+def test_parse_grade_tolerates_fences_and_chatter(raw):
+    assert parse_grade(raw) == {"comment": "ok", "category": "perfect", "score": 95}
+
+
+def test_parse_grade_still_validates_fenced_replies():
+    raw = '```json\n{"comment": "c", "category": "perfect", "score": 10}\n```'
+
+    with pytest.raises(GradeError):
+        parse_grade(raw)
+
+
 # --- answer prompt ----------------------------------------------------------
 
 

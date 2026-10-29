@@ -196,15 +196,15 @@ Header `flex justify-between items-center pb-8 border-b border-line`: title left
 ### Comparison (`02 comparison`)
 Section header row: label on the left, `table` / `chart` tabs on the right.
 
-**Table.** Grid generated from the question count: `model | median | pass | q1…qN | t/s | time, s`. Header cells `text-fg-muted`; median `text-heading-sm`; t/s and time `text-fg-muted`. Cells: `err` (generation error, warn), `?` (judge error, warn), `*` (truncated), muted (question without a reference). Wide matrices scroll horizontally with a sticky model column; `tabular-nums` on rows except the name column.
+**Table.** Grid generated from the question count: `model | mean | pass | q1…qN | t/s | time, s`. Header cells `text-fg-muted`; mean `text-heading-sm`; t/s and time `text-fg-muted`. Cells: `err` (generation error, warn), `?` (judge error, warn), `*` (truncated), muted (question without a reference). Wide matrices scroll horizontally with a sticky model column (the cell stretches to the row height, so the score bars of scrolled columns do not show below it); `tabular-nums` on rows except the name column.
 Under every score: an `h-2 bg-line` track with a `bg-fg` bar of `score%` (`bg-fg-muted` for questions without a reference, empty for errors). Monochrome: rule 4 holds.
 
-**Chart.** Median score (y, fixed 0–100 so runs compare) against median t/s (x, linear, ticks 1/2/5 × 10ⁿ).
+**Chart.** Mean score (y, fixed 0–100 so runs compare) against median t/s (x, linear, ticks 1/2/5 × 10ⁿ).
 - Plot box `h-320 border-l border-b border-line` inside gutters `pt-22 pr-22 pb-55 pl-44` (y ticks left, x ticks and `t/s` below). Everything is HTML positioned in %, labels stay 13px; the only SVG is the Pareto polyline (`vector-effect: non-scaling-stroke`, dashed `stroke-fg-muted`).
 - Quadrant "faster and better than the median": `bg-surface`, bounded by dashed median lines. The bound is relative (medians of this run): there is no absolute threshold on the client.
 - Median labels sit inside the plot next to their line (flipped near the right edge / the top), so nothing sticks out of the box.
 - Points: 8px squares, `bg-fg` = recommended, `border-fg` = others. The label is right of the point (left near the right edge); `text-fg` inside the quadrant, otherwise muted.
-- Models without a median score or t/s are listed below as "not plotted".
+- Models without a mean score or t/s are listed below as "not plotted".
 - The plot has `role="img"` with a text summary; the table tab carries the same data.
 
 ### Summary (results)
@@ -320,7 +320,7 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 - **Files.** `templates/_theme.html`, `base.html`, `index.html`, `_components.html`; `static/js/lmao.js` (Alpine state, SSE, requests) and `static/js/lib.js` (pure helpers: `shortName`, `shortNames`, `buildSteps`, `parseMarkdown`, `buildReport`, `buildChart`, `competitionRanks`, `sortHistory`; no DOM, can be unit-tested later).
 - **Components.** One Jinja macro per Figma component in `_components.html`: `activity_dot`, `section_label`, `md_inline`, `md`, `answer_box`, `warn_notice`, `field`, `checkbox_row`, `status_row`, `card_head`, `eval_block`, `nav_toggle`, `tabs`.
 - **Short names.** `shortNames()` builds one map per model set. Colliding short names get the quantisation (`foo · Q4_K_M`), otherwise the full name. The full name stays in `title` attributes and in the archive meta.
-- **Matrix.** Per-question scores, median, pass rate, t/s and time. fails / critical / errors / judge errors live in the model card header. Scores have no colour scale.
+- **Matrix.** Per-question scores, mean, pass rate, t/s and time. median / fails / critical / errors / judge errors live in the model card header. Scores have no colour scale.
 - **Judge summary.** Markdown is parsed into blocks and rendered with `x-text` (see "Markdown"); bold is shown with `text-fg` because only Inter 100 and 300 are loaded.
 - **Wording.** Questions without a reference: "excluded from the scores" everywhere.
 - **Running screen.** Rows are built up front as `queued` from the request payload and keyed `phase:model:question`. A failed answer marks its grading row `skipped` (the backend sends no event for it). Rows in flight when the stream breaks become `error` / `interrupted`. The stream is closed on the first `onerror` (no auto-reconnect: the backend replays from the start).

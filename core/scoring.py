@@ -33,6 +33,10 @@ def _median(values: list, digits: int):
     return round(statistics.median(values), digits) if values else None
 
 
+def _mean(values: list, digits: int):
+    return round(statistics.fmean(values), digits) if values else None
+
+
 def summarize_model(model: str, entries: list[dict]) -> dict:
     """Aggregates the answers of one model.
 
@@ -43,9 +47,9 @@ def summarize_model(model: str, entries: list[dict]) -> dict:
             None) and time_sec (answer time without model loading, or None).
 
     Returns:
-        dict: model, n (answers counted in the score), median, pass_rate
-            (fraction), fails, critical_fails, errors, judge_errors,
-            n_no_reference, median_tps and median_time_sec.
+        dict: model, n (answers counted in the score), mean, median,
+            pass_rate (fraction), fails, critical_fails, errors,
+            judge_errors, n_no_reference, median_tps and median_time_sec.
     """
     scores = []
     errors = judge_errors = n_no_reference = 0
@@ -71,6 +75,7 @@ def summarize_model(model: str, entries: list[dict]) -> dict:
     return {
         "model": model,
         "n": n,
+        "mean": _mean(scores, 1),
         "median": _median(scores, 1),
         "pass_rate": round(passed / n, 2) if n else None,
         "fails": sum(1 for s in scores if CRITICAL_BELOW <= s < PASS_MIN_SCORE),

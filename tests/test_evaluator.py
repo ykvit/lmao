@@ -300,6 +300,7 @@ def test_full_run_emits_events_and_saves_results():
     stats = summary_by_model(pipeline)
     assert (stats["cand-a"]["median"], stats["cand-a"]["pass_rate"]) == (90, 1.0)
     assert (stats["cand-b"]["median"], stats["cand-b"]["fails"]) == (40, 1)
+    assert (stats["cand-a"]["mean"], stats["cand-b"]["mean"]) == (90, 40)
 
 
 def test_questions_get_ids_and_default_tags_and_metrics_accumulate():

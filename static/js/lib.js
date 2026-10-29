@@ -550,6 +550,8 @@ function buildChart(summaryModels, display, recommended) {
         mid: {
             left: xPos(midTps),
             bottom: midScore,
+            flipX: xPos(midTps) > 70, // t/s label left of its line near the right edge
+            flipY: midScore > 90, // score label below its line near the top
             tpsText: `median ${round1(midTps)} t/s`,
             scoreText: `median ${round1(midScore)}`,
         },
@@ -557,6 +559,83 @@ function buildChart(summaryModels, display, recommended) {
             leading.length ? leading.join(", ") : "none"
         }.`,
     };
+}
+
+// --- summary --------------------------------------------------------------
+
+// Rank of one model among all for a stats key; null when it has no value.
+function rankOf(summaryModels, model, key, higherIsBetter) {
+    const values = summaryModels
+        .map((m) => m[key])
+        .filter((v) => typeof v === "number" && isFinite(v));
+    const own = summaryModels.find((m) => m.model === model)?.[key];
+    if (typeof own !== "number" || !isFinite(own) || !values.length) return null;
+    const better = values.filter((v) => (higherIsBetter ? v > own : v < own)).length;
+    return {
+        rank: better + 1,
+        n: values.length,
+        best: higherIsBetter ? Math.max(...values) : Math.min(...values),
+    };
+}
+
+// Four key figures of the recommended model, each with its place in the run.
+function verdictFigures(summaryModels, model) {
+    const s = summaryModels.find((m) => m.model === model);
+    if (!s) return [];
+    const num = (v) => (typeof v === "number" && isFinite(v) ? String(round1(v)) : "–");
+    const caption = (r, fmt) => {
+        if (!r) return "";
+        if (r.rank === 1) return r.n > 1 ? `best of ${r.n}` : "only model";
+        return `#${r.rank} of ${r.n} · best ${fmt(r.best)}`;
+    };
+    return [
+        {
+            label: "median score",
+            value: num(s.median),
+            unit: "/ 100",
+            caption: caption(rankOf(summaryModels, model, "median", true), num),
+        },
+        {
+            label: "pass rate",
+            value: s.pass_rate == null ? "–" : String(Math.round(s.pass_rate * 100)),
+            unit: "%",
+            caption: caption(rankOf(summaryModels, model, "pass_rate", true), (v) => `${Math.round(v * 100)}%`),
+        },
+        {
+            label: "speed",
+            value: num(s.median_tps),
+            unit: "t/s",
+            caption: caption(rankOf(summaryModels, model, "median_tps", true), num),
+        },
+        {
+            label: "median time",
+            value: num(s.median_time_sec),
+            unit: "s",
+            caption: caption(rankOf(summaryModels, model, "median_time_sec", false), (v) => `${num(v)} s`),
+        },
+    ];
+}
+
+// The judge writes full model names; show the same short names as the rest of the UI.
+// Longest first, so a name that contains another one is replaced as a whole.
+function shortenNames(blocks, names) {
+    const pairs = Object.entries(names)
+        .filter(([full, short]) => full !== short)
+        .sort((a, b) => b[0].length - a[0].length);
+    if (!pairs.length) return blocks;
+    const fix = (parts) =>
+        parts.forEach((p) => {
+            pairs.forEach(([full, short]) => {
+                if (p.text.includes(full)) p.text = p.text.split(full).join(short);
+            });
+        });
+    blocks.forEach((b) => {
+        if (b.inlines) fix(b.inlines);
+        if (b.items) b.items.forEach(fix);
+        if (b.head) b.head.forEach(fix);
+        if (b.rows) b.rows.forEach((row) => row.forEach(fix));
+    });
+    return blocks;
 }
 
 // Everything the results screen shows, computed once per opened run.
@@ -653,9 +732,10 @@ function buildReport(data) {
             short: rec.model ? display(rec.model) : "",
             label: rec.model ? "recommended" : "no recommendation",
             rule: RULE_LABELS[rec.rule] || rec.rule || "",
+            figures: rec.model ? verdictFigures(summaryModels, rec.model) : [],
         },
         notes,
-        summaryBlocks: parseMarkdown(summary.text, { bareFence: true }),
+        summaryBlocks: shortenNames(parseMarkdown(summary.text, { bareFence: true }), names),
         chart: buildChart(summaryModels, display, rec.model),
         // model | median | pass | one column per question | t/s | time
         grid: `grid-template-columns:minmax(160px,1fr) 64px 64px repeat(${questions.length},48px) 64px 64px`,

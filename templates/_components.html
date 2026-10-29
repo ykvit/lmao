@@ -161,7 +161,7 @@
     </div>
     <div class="flex-1 min-w-0 break-words" :class="isMuted({{ state }}) && 'text-fg-muted'"
          x-text="{{ label }}"{% if title_expr %} :title="{{ title_expr }}"{% endif %}></div>
-    <div class="max-w-320 break-words text-fg-muted" x-text="{{ meta }}"></div>
+    <div class="max-w-320 break-words text-fg-muted tabular-nums" x-text="{{ meta }}"></div>
 </div>
 {%- endmacro %}
 

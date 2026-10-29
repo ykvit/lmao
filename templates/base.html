@@ -12,8 +12,10 @@
     {% include "_theme.html" %}
 </head>
 {# tabular-nums: timers, counters and matrix columns keep their width. #}
+{# tabular-nums only where digits change live or stand in columns: in Inter it
+   also widens the hyphen, which breaks names like 'ministral-3:3b'. #}
 <body x-data="lmao" @keydown.window="hotkey($event)"
-      class="h-screen flex flex-col overflow-hidden bg-bg text-fg font-sans font-light text-caption tabular-nums">
+      class="h-screen flex flex-col overflow-hidden bg-bg text-fg font-sans font-light text-caption">
 
     {# Three columns 1fr / auto / 1fr: the status sits in the true centre. #}
     <header class="h-66 shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-22 px-22 border-b border-line">
@@ -28,7 +30,8 @@
 
         <div class="min-w-0 max-w-480 flex items-center gap-8" :class="topStatus.tone">
             {{ ui.activity_dot("topStatus.dot") }}
-            <span class="truncate" x-text="topStatus.text" :title="topStatus.text"></span>
+            <span class="truncate" :class="topStatus.dot && 'tabular-nums'"
+                  x-text="topStatus.text" :title="topStatus.text"></span>
             <button type="button" x-show="topStatus.go" x-cloak @click="showRun()"
                     class="shrink-0 text-fg-muted hover:text-fg">back to run</button>
         </div>

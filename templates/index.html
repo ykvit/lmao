@@ -140,7 +140,7 @@
                         {{ ui.activity_dot("p.state === 'running'") }}
                         <span class="truncate" x-text="p.short"></span>
                     </span>
-                    <span class="shrink-0 text-fg-muted">
+                    <span class="shrink-0 text-fg-muted tabular-nums">
                         <span x-text="p.side"></span><span
                               x-show="p.errors" class="text-warn" x-text="(p.side ? ' · ' : '') + p.errors + ' err'"></span>
                     </span>
@@ -207,19 +207,46 @@
                 <div class="text-fg-muted break-words" x-text="report.meta"></div>
             </div>
 
-            {# 01 summary #}
-            <section class="flex flex-col gap-15">
+            {# 01 summary: verdict -> key figures -> notes -> judge text #}
+            <section class="flex flex-col">
                 {{ ui.section_label("01 summary") }}
-                <div class="flex flex-col gap-8">
+
+                <div class="py-22 flex flex-col gap-8">
                     <div class="text-fg-muted" x-text="report.verdict.label"></div>
                     <div x-show="report.verdict.model" class="text-heading break-words"
                          x-text="report.verdict.short" :title="report.verdict.model"></div>
                     <div class="text-fg-muted" x-text="report.verdict.rule"></div>
                 </div>
-                <template x-for="(n, ni) in report.notes" :key="ni">
-                    <div class="text-fg-muted" x-text="n"></div>
-                </template>
-                <div class="max-w-720">{{ ui.md("report.summaryBlocks") }}</div>
+
+                {# key figures of the recommended model, hairline columns, no fills #}
+                <div x-show="report.verdict.figures.length" class="grid grid-cols-4 border-y border-line">
+                    <template x-for="(f, fi) in report.verdict.figures" :key="f.label">
+                        <div class="min-w-0 py-15 flex flex-col gap-4"
+                             :class="fi === 0 ? 'pr-22' : 'px-22 border-l border-line'">
+                            <span class="text-fg-muted" x-text="f.label"></span>
+                            <span class="flex items-baseline gap-6">
+                                <span class="text-display font-thin tabular-nums" x-text="f.value"></span>
+                                <span class="text-fg-muted" x-text="f.unit"></span>
+                            </span>
+                            <span class="text-fg-muted break-words" x-text="f.caption"></span>
+                        </div>
+                    </template>
+                </div>
+
+                {# label column = eval block score column (120px, gap 33) #}
+                <div x-show="report.notes.length" class="grid grid-cols-[120px_1fr] gap-x-33 py-15 border-b border-line">
+                    <div class="text-fg-muted">notes</div>
+                    <div class="min-w-0 flex flex-col gap-6">
+                        <template x-for="(n, ni) in report.notes" :key="ni">
+                            <div x-text="n"></div>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="report.summaryBlocks.length" class="grid grid-cols-[120px_1fr] gap-x-33 py-15 border-b border-line">
+                    <div class="text-fg-muted">judge</div>
+                    <div class="min-w-0 max-w-720">{{ ui.md("report.summaryBlocks") }}</div>
+                </div>
             </section>
 
             {# 02 comparison: table / chart #}
@@ -247,8 +274,8 @@
                                     <div>time, s</div>
                                 </div>
                                 <template x-for="m in report.models" :key="m.model">
-                                    <div class="grid items-center gap-x-15 py-12 border-b border-line" :style="report.grid">
-                                        <div class="sticky left-0 bg-bg pr-15 break-words" x-text="m.short" :title="m.model"></div>
+                                    <div class="grid items-center gap-x-15 py-12 border-b border-line tabular-nums" :style="report.grid">
+                                        <div class="sticky left-0 bg-bg pr-15 break-words normal-nums" x-text="m.short" :title="m.model"></div>
                                         <div class="text-heading-sm" x-text="m.median"></div>
                                         <div x-text="m.passRate"></div>
                                         <template x-for="(c, ci) in m.cells" :key="ci">
@@ -275,8 +302,9 @@
                     <div x-show="comparisonView === 'chart'" class="flex flex-col gap-15">
                         <template x-if="report.chart.points.length">
                             <div class="flex flex-col gap-15">
-                                {# gutters: y ticks left, median score label right, x ticks + title below #}
-                                <div class="pt-33 pr-44 pb-55 pl-44">
+                                {# gutters: y ticks + title left, half an x tick right, x ticks + title below.
+                                   Median labels sit inside the plot: nothing may stick out to the right. #}
+                                <div class="pt-22 pr-22 pb-55 pl-44">
                                     <div class="relative h-320 border-l border-b border-line"
                                          role="img" :aria-label="report.chart.label">
 
@@ -287,10 +315,18 @@
                                              :style="'left:' + report.chart.mid.left + '%'"></div>
                                         <div class="absolute inset-x-0 border-t border-dashed border-line"
                                              :style="'bottom:' + report.chart.mid.bottom + '%'"></div>
-                                        <span class="absolute bottom-full pb-8 -translate-x-1/2 whitespace-nowrap text-fg-muted"
-                                              :style="'left:' + report.chart.mid.left + '%'" x-text="report.chart.mid.tpsText"></span>
-                                        <span class="absolute left-full pl-8 translate-y-1/2 whitespace-nowrap text-fg-muted"
-                                              :style="'bottom:' + report.chart.mid.bottom + '%'" x-text="report.chart.mid.scoreText"></span>
+                                        {# t/s median: top of its line, right of it (left near the right edge) #}
+                                        <span class="absolute top-8 whitespace-nowrap text-fg-muted"
+                                              :class="report.chart.mid.flipX ? 'pr-8' : 'pl-8'"
+                                              :style="report.chart.mid.flipX
+                                                  ? 'right:' + (100 - report.chart.mid.left) + '%'
+                                                  : 'left:' + report.chart.mid.left + '%'"
+                                              x-text="report.chart.mid.tpsText"></span>
+                                        {# score median: right end of its line, above it (below near the top) #}
+                                        <span class="absolute right-8 whitespace-nowrap text-fg-muted"
+                                              :class="report.chart.mid.flipY ? 'pt-4' : '-translate-y-full pb-4'"
+                                              :style="'top:' + (100 - report.chart.mid.bottom) + '%'"
+                                              x-text="report.chart.mid.scoreText"></span>
 
                                         {# axes #}
                                         <span class="absolute bottom-full right-full pr-8 pb-8 text-fg-muted">score</span>

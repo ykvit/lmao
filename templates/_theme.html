@@ -1,0 +1,72 @@
+{# Head partial: fonts, Tailwind browser build, theme tokens, Alpine.
+   Versions are pinned. SRI is not set yet (see the note in the PR, step 1b). #}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@100;300&family=IBM+Plex+Mono:wght@300&display=swap">
+
+<style>[x-cloak] { display: none !important; }</style>
+
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.2"></script>
+
+<style type="text/tailwindcss">
+  @theme {
+    /* Zero radius, zero shadows: these utilities must produce nothing. */
+    --radius-*: initial;
+    --shadow-*: initial;
+    --inset-shadow-*: initial;
+    --drop-shadow-*: initial;
+
+    /* 1 unit = 1px: p-22 = 22px, w-320 = 320px. */
+    --spacing: 1px;
+
+    --color-*: initial;
+    --color-bg: #000000;
+    --color-surface: #0f0e12;
+    --color-line: #2a292e;
+    --color-fg: #f6f8f7;
+    --color-fg-muted: #b2b2b2;
+    --color-link: #3b9ae1;
+    --color-warn: #f0a800;
+
+    --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+
+    --text-*: initial;
+    --text-caption: 13px;
+    --text-caption--line-height: 1.5;
+    --text-subheading: 19px;
+    --text-subheading--line-height: 1.15;
+    --text-heading-sm: 24px;
+    --text-heading-sm--line-height: 1.15;
+    --text-heading: 26px;
+    --text-heading--line-height: 1.15;
+    --text-display: 40px;
+    --text-display--line-height: 1.11;
+
+    --animate-breathe: breathe 2s ease-in-out infinite;
+    @keyframes breathe {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.25; }
+    }
+  }
+
+  /* Base layer: utilities (outline-none, cursor-not-allowed...) still win. */
+  @layer base {
+    :focus-visible {
+      outline: 1px solid var(--color-fg);
+      outline-offset: 2px;
+    }
+    button:not(:disabled),
+    summary {
+      cursor: pointer;
+    }
+    summary {
+      list-style: none;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+  }
+</style>
+
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>

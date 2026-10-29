@@ -1,107 +1,456 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Operator | Model Assessment</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-</head>
-<body>
-    <div class="layout">
-        
-        <!-- PANEL 1: SETUP (Left Sidebar) -->
-        <aside class="sidebar left-sidebar" id="setupSidebar">
-            <h2>Operator Setup</h2>
-            <form id="evalForm">
-                
-                <div class="section-block">
-                    <h3>Global Settings</h3>
-                    <div class="form-group">
-                        <label>Judge Model:</label>
-                        <select id="judgeModel" required></select>
-                        <label class="checkbox-label"><input type="checkbox" id="judgeCloud"> Cloud judge (grades in parallel; prompts and answers leave this machine)</label>
-                    </div>
+{% extends "base.html" %}
 
-                    <div class="form-group">
-                        <label>Candidates:</label>
-                        <div id="candidatesList" class="checkbox-group">
-                            <!-- Checkboxes injected via JavaScript -->
-                        </div>
-                    </div>
+{% block setup %}
+<form @submit.prevent="submit()" novalidate
+      class="min-h-full flex flex-col justify-between gap-22">
 
-                    <div class="form-group">
-                        <label>Judge criteria (Optional):</label>
-                        <textarea id="baseRationale" rows="2" placeholder="Extra criteria applied to every question"></textarea>
-                    </div>
-                </div>
+    <div class="flex flex-col gap-22">
 
-                <div class="section-block" id="testCasesWrapper">
-                    <h3>Test Generation</h3>
-                    
-                    <div id="testCasesContainer">
-                        <!-- Individual Test Case Block -->
-                        <div class="test-case-block">
-                            <div class="test-case-header">Test Case 1</div>
-                            <div class="form-group">
-                                <input type="text" class="tc-tag" placeholder="Tag (e.g., Python Code)" value="python_test" required>
-                            </div>
-                            <div class="form-group">
-                                <textarea class="tc-question" rows="2" placeholder="Question / Prompt" required>Write a python function to add two numbers.</textarea>
-                            </div>
-                            <div class="form-group">
-                                <textarea class="tc-specific" rows="2" placeholder="Specific Prompt / Rationale (Optional)">Must contain working python code.</textarea>
-                            </div>
-                            <div class="form-group">
-                                <textarea class="tc-reference" rows="2" placeholder="Reference answer (Optional, overrides the judge's)"></textarea>
-                            </div>
-                        </div>
-                    </div>
+        {# 01 judge model #}
+        <div class="flex flex-col gap-8">
+            <label class="flex flex-col gap-8">
+                <span class="text-fg-muted">01 judge model</span>
+                <span class="relative block">
+                    <select x-model="judge" :disabled="models.length === 0"
+                            class="w-full appearance-none bg-bg border border-line pl-12 pr-36 py-10 text-fg focus:border-fg outline-none disabled:text-fg-muted">
+                        <option value="" disabled class="bg-bg">select judge</option>
+                        <template x-for="m in models" :key="m">
+                            <option :value="m" x-text="shortName(m)" :title="m" class="bg-bg"></option>
+                        </template>
+                    </select>
+                    <svg class="absolute right-12 top-1/2 -translate-y-1/2 pointer-events-none"
+                         width="12" height="12" viewBox="0 0 12 12" fill="none"
+                         stroke="#b2b2b2" aria-hidden="true">
+                        <path d="M2 4l4 4 4-4"/>
+                    </svg>
+                </span>
+            </label>
 
-                    <button type="button" id="addTestCaseBtn" class="secondary-btn">+ Add Another Test</button>
-                </div>
+            {# checkbox-row: cloud judge #}
+            <label class="flex items-start gap-12 py-11 border-b border-line cursor-pointer">
+                <input type="checkbox" x-model="judgeCloud" class="peer sr-only">
+                <span class="mt-4 size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
+                        <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
+                    </svg>
+                </span>
+                <span class="flex flex-col">
+                    <span class="text-fg-muted peer-checked:text-fg">cloud judge</span>
+                    <span class="text-fg-muted">grades in parallel. prompts and answers leave this machine.</span>
+                </span>
+            </label>
+        </div>
 
-                <button type="submit" id="runBtn" class="primary-btn">🚀 Run Evaluation</button>
-            </form>
-        </aside>
+        {# 02 candidates #}
+        <div class="flex flex-col gap-0" role="group" aria-labelledby="candidates-label">
+            <div id="candidates-label" class="pb-8 border-b border-line text-fg-muted">02 candidates</div>
 
-        <!-- PANEL 2: MAIN DASHBOARD (Center Panel) -->
-        <main class="dashboard">
-            <header class="dashboard-header">
-                <div class="header-left">
-                    <button id="toggleSetupBtn" class="icon-btn" title="Toggle Setup Panel">Setup</button>
-                    <h1>Dashboard</h1>
-                </div>
-                <div class="header-right">
-                    <button id="toggleHistoryBtn" class="icon-btn" title="Toggle History Panel">Archive</button>
-                </div>
-            </header>
-
-            <section id="resultsContainer" class="results-grid">
-                <div class="welcome-msg">Select models, add test cases, and press "Run Evaluation" to start.</div>
-            </section>
-            
-            <!-- Central Progress Overlay (Hidden by default) -->
-            <div id="progressOverlay" class="progress-overlay hidden">
-                <div class="progress-modal">
-                    <h2>⚙️ Processing Task...</h2>
-                    <div id="progressText" class="log-item-plain"></div>
-                    <ul id="logList" class="log-list">
-                        <!-- SSE Real-time logs will be injected here via JavaScript -->
-                    </ul>
-                </div>
+            <div x-show="modelsLoaded && models.length === 0" x-cloak
+                 class="pt-12 flex flex-col gap-8 text-warn" role="alert">
+                <span>no models found. is ollama running?</span>
+                <button type="button" @click="loadModels()"
+                        class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
             </div>
-        </main>
 
-        <!-- PANEL 3: ARCHIVE/HISTORY (Right Sidebar) -->
-        <aside class="sidebar right-sidebar collapsed" id="historySidebar">
-            <h2>Archive</h2>
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top:0;">Past evaluations history</p>
-            <div id="historyList" class="history-list">
-                <!-- History items injected via JavaScript -->
+            <div class="max-h-240 overflow-y-auto">
+                <template x-for="m in models" :key="m">
+                    {# checkbox-row #}
+                    <label class="flex items-center gap-12 py-11 border-b border-line cursor-pointer">
+                        <input type="checkbox" :value="m" x-model="selected" class="peer sr-only">
+                        <span class="size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
+                                <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
+                            </svg>
+                        </span>
+                        <span class="min-w-0 break-words text-fg-muted peer-checked:text-fg"
+                              x-text="shortName(m)" :title="m"></span>
+                    </label>
+                </template>
             </div>
-        </aside>
+        </div>
 
+        {# 03 judge criteria #}
+        <label class="flex flex-col gap-8">
+            <span class="text-fg-muted">03 judge criteria (optional)</span>
+            <textarea x-model="baseRationale" rows="3"
+                      placeholder="applied to every question"
+                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
+        </label>
+
+        {# 04 test cases #}
+        <div class="flex flex-col gap-12">
+            <div class="pb-8 border-b border-line text-fg-muted">04 test cases</div>
+
+            <template x-for="(c, i) in cases" :key="c.id">
+                <div>
+                    {# expanded #}
+                    <div x-show="c.open" class="border border-line p-15 flex flex-col gap-12">
+                        <div class="flex justify-between items-center">
+                            <span x-text="'case ' + pad2(i)"></span>
+                            <span class="flex items-center gap-15">
+                                <button type="button" x-show="c.question.trim()" @click="c.open = false"
+                                        class="text-fg-muted hover:text-fg">collapse</button>
+                                <button type="button" x-show="cases.length > 1" @click="removeCase(c.id)"
+                                        class="text-fg-muted hover:text-fg">remove</button>
+                            </span>
+                        </div>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">tag (optional)</span>
+                            <input type="text" x-model="c.tag" placeholder="e.g. python"
+                                   class="w-full bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none">
+                        </label>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">question</span>
+                            <textarea x-model="c.question" rows="3"
+                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
+                        </label>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">specific criteria (optional)</span>
+                            <textarea x-model="c.rationale" rows="2"
+                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
+                        </label>
+                        <label class="flex flex-col gap-8">
+                            <span class="text-fg-muted">reference answer (optional)</span>
+                            <textarea x-model="c.reference" rows="2"
+                                      placeholder="if empty, the judge writes one"
+                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
+                        </label>
+                    </div>
+
+                    {# collapsed #}
+                    <div x-show="!c.open" class="border border-line px-15 py-12 flex items-center gap-15">
+                        <span x-text="'case ' + pad2(i)"></span>
+                        <span class="flex-1 min-w-0 truncate text-fg-muted"
+                              x-text="c.tag.trim() || c.question.trim()"></span>
+                        <button type="button" @click="c.open = true"
+                                class="text-fg-muted hover:text-fg">edit</button>
+                    </div>
+                </div>
+            </template>
+
+            <button type="button" @click="addCase()"
+                    class="w-full text-left border border-fg-muted text-fg px-22 py-13 hover:border-fg">+ add test case</button>
+        </div>
     </div>
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
-</body>
-</html>
+
+    <div class="flex flex-col gap-12">
+        <div x-show="formError" x-cloak role="alert"
+             class="border border-warn px-15 py-12 text-warn" x-text="formError"></div>
+        <button type="submit" :disabled="submitting || busy"
+                class="w-full text-left bg-fg text-bg px-22 py-13 hover:bg-fg-muted disabled:bg-line disabled:text-fg-muted disabled:cursor-not-allowed">run evaluation</button>
+    </div>
+</form>
+{% endblock %}
+
+{% block main %}
+<div x-show="view === 'idle'" x-cloak class="text-fg-muted">
+    select models, add test cases and press run evaluation.
+</div>
+{# running #}
+<div x-show="view === 'running'" x-cloak class="flex flex-col gap-33">
+
+    <div class="sr-only" aria-live="polite" x-text="run.status === 'running' ? ('step ' + run.done + ' of ' + run.total) : ''"></div>
+
+    <div class="flex flex-col gap-15">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center gap-8"
+                 :class="run.status === 'error' ? 'text-warn' : 'text-fg'">
+                <span x-show="run.status === 'running'" aria-hidden="true"
+                      class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
+                <span class="text-subheading"
+                      x-text="run.status === 'error' ? 'stopped' : 'running'"></span>
+            </div>
+            <div class="text-fg-muted flex items-center gap-15">
+                <span x-text="'elapsed ' + fmtClock(elapsed)"></span>
+                <span x-text="run.done + ' / ' + run.total"></span>
+            </div>
+        </div>
+        <div role="progressbar" aria-label="evaluation progress" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100"
+             :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="h-4 bg-line">
+            <div class="h-4 bg-fg" :style="'width:' + pct + '%'"></div>
+        </div>
+    </div>
+
+    <div x-show="run.status === 'error'" x-cloak role="alert"
+         class="border border-warn px-15 py-12 text-warn flex flex-col gap-12">
+        <span x-text="run.error"></span>
+        <button type="button" @click="dismissRun()"
+                class="self-start border border-warn px-15 py-9 hover:bg-line">back to setup</button>
+    </div>
+
+    <template x-for="g in phaseGroups" :key="g.phase">
+        <div class="flex flex-col">
+            <div class="pb-8 border-b border-line text-fg-muted" x-text="g.title"></div>
+            <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
+                {# status-row #}
+                <div>
+                    <div class="flex items-start gap-15 py-10 border-b border-line">
+                        <div class="w-72 shrink-0 flex items-center gap-8" :class="stateClass(s.state)">
+                            <span x-show="s.state === 'running'" aria-hidden="true"
+                                  class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
+                            <span x-text="s.state"></span>
+                        </div>
+                        <div class="flex-1 min-w-0 break-words"
+                             :class="(s.state === 'queued' || s.state === 'skipped') && 'text-fg-muted'"
+                             x-text="s.label" :title="s.model"></div>
+                        <div class="max-w-320 break-words text-fg-muted" x-text="rowMeta(s)"></div>
+                    </div>
+                    {# load notice #}
+                    <div class="pl-87 py-10 border-b border-line" x-show="showLoadNotice(s)" x-cloak aria-live="polite">
+                        <div class="bg-surface border border-line p-15 flex flex-col gap-8">
+                            <div class="flex items-center gap-8">
+                                <span class="size-8 bg-link animate-breathe motion-reduce:animate-none" aria-hidden="true"></span>
+                                the model may still be loading — this is normal
+                            </div>
+                            <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </template>
+</div>
+{# results, per model #}
+<div x-show="view === 'results'" x-cloak class="flex flex-col gap-33">
+    <div x-show="resultsError" role="alert"
+         class="border border-warn px-15 py-12 text-warn" x-text="resultsError"></div>
+    <div x-show="!resultsError && !report" class="text-fg-muted">loading…</div>
+
+    <template x-if="report">
+        <div class="flex flex-col gap-33">
+
+            <div class="flex flex-col gap-8">
+                <div class="text-heading" x-text="runTitle"></div>
+                <div class="text-fg-muted break-words" x-text="report.meta"></div>
+            </div>
+
+            {# summary #}
+            <section class="flex flex-col gap-15">
+                <div class="pb-8 border-b border-line text-fg-muted">01 summary</div>
+                <div class="flex flex-col gap-8">
+                    <div class="text-fg-muted" x-text="report.verdict.label"></div>
+                    <div x-show="report.verdict.model" class="text-heading break-words"
+                         x-text="report.verdict.short" :title="report.verdict.model"></div>
+                    <div class="text-fg-muted" x-text="report.verdict.rule"></div>
+                </div>
+                <template x-for="(n, ni) in report.notes" :key="ni">
+                    <div class="text-fg-muted" x-text="n"></div>
+                </template>
+
+                <div class="flex flex-col gap-12 max-w-720">
+                    <template x-for="(b, bi) in report.summaryBlocks" :key="bi">
+                        <div>
+                            <template x-if="b.type === 'heading'">
+                                <div class="text-subheading text-fg">
+                                    <template x-for="(p, pi) in b.inlines" :key="pi"><span x-text="p.text"></span></template>
+                                </div>
+                            </template>
+                            <template x-if="b.type === 'paragraph'">
+                                <p class="text-fg-muted">
+                                    <template x-for="(p, pi) in b.inlines" :key="pi"><span :class="p.bold && 'text-fg'" x-text="p.text"></span></template>
+                                </p>
+                            </template>
+                            <template x-if="b.type === 'list'">
+                                <ul class="flex flex-col gap-6">
+                                    <template x-for="(item, ii) in b.items" :key="ii">
+                                        <li class="flex gap-8 text-fg-muted">
+                                            <span aria-hidden="true">–</span>
+                                            <span class="min-w-0">
+                                                <template x-for="(p, pi) in item" :key="pi"><span :class="p.bold && 'text-fg'" x-text="p.text"></span></template>
+                                            </span>
+                                        </li>
+                                    </template>
+                                </ul>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            {# comparison matrix #}
+            <section class="flex flex-col gap-15">
+                <div class="pb-8 border-b border-line text-fg-muted">02 comparison</div>
+                <div class="overflow-x-auto">
+                    <div class="min-w-max">
+                        <div class="grid items-center gap-x-15 py-12 border-b border-line text-fg-muted" :style="report.grid">
+                            <div class="sticky left-0 bg-bg">model</div>
+                            <div>median</div>
+                            <div>pass</div>
+                            <template x-for="h in report.questionHeads" :key="h.id">
+                                <div x-text="h.id" :title="h.title"></div>
+                            </template>
+                            <div>t/s</div>
+                            <div>time, s</div>
+                        </div>
+                        <template x-for="m in report.models" :key="m.model">
+                            <div class="grid items-center gap-x-15 py-12 border-b border-line" :style="report.grid">
+                                <div class="sticky left-0 bg-bg pr-15 break-words" x-text="m.short" :title="m.model"></div>
+                                <div class="text-heading-sm" x-text="m.median"></div>
+                                <div x-text="m.passRate"></div>
+                                <template x-for="(c, ci) in m.cells" :key="ci">
+                                    <div :class="c.warn ? 'text-warn' : (c.muted ? 'text-fg-muted' : 'text-fg')"
+                                         x-text="c.text" :title="c.title"></div>
+                                </template>
+                                <div class="text-fg-muted" x-text="m.tps"></div>
+                                <div class="text-fg-muted" x-text="m.time"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, not in the median</div>
+            </section>
+
+            {# view: per model / per question #}
+            <section class="flex flex-col gap-22">
+                <div class="flex justify-between items-center pb-8 border-b border-line">
+                    <div class="text-fg-muted">03 view</div>
+                    {# view-tab #}
+                    <div class="flex" role="tablist" aria-label="results view"
+                         @keydown.arrow-right.prevent="switchTab('question')"
+                         @keydown.arrow-left.prevent="switchTab('model')"
+                         @keydown.home.prevent="switchTab('model')"
+                         @keydown.end.prevent="switchTab('question')">
+                        <button type="button" role="tab" id="tab-model"
+                                :aria-selected="resultsView === 'model'" :tabindex="resultsView === 'model' ? 0 : -1" aria-controls="results-panel"
+                                @click="resultsView = 'model'"
+                                class="px-15 py-9 border"
+                                :class="resultsView === 'model' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted hover:text-fg'">per model</button>
+                        <button type="button" role="tab" id="tab-question"
+                                :aria-selected="resultsView === 'question'" :tabindex="resultsView === 'question' ? 0 : -1" aria-controls="results-panel"
+                                @click="resultsView = 'question'"
+                                class="px-15 py-9 border"
+                                :class="resultsView === 'question' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted hover:text-fg'">per question</button>
+                    </div>
+                </div>
+
+                <div id="results-panel" role="tabpanel"
+                     :aria-labelledby="resultsView === 'model' ? 'tab-model' : 'tab-question'"
+                     class="flex flex-col gap-22">
+
+                    {# per model #}
+                    <template x-if="resultsView === 'model'">
+                        <div class="flex flex-col gap-22">
+                            <template x-for="m in report.models" :key="m.model">
+                                {# card #}
+                                <article class="border border-line p-22">
+                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
+                                        <div class="text-subheading min-w-0 break-words" x-text="m.short" :title="m.model"></div>
+                                        <div class="text-fg-muted" x-text="m.metricsLine"></div>
+                                    </div>
+                                    <template x-for="e in m.entries" :key="e.qid">
+                                        {# eval block #}
+                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+                                            <div class="w-120 shrink-0">
+                                                <div class="text-fg-muted" x-text="e.label"></div>
+                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
+                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
+                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
+                                            </div>
+                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
+                                                <div class="text-fg-muted" x-text="e.question"></div>
+                                                <template x-for="(n, ni) in e.notes" :key="ni">
+                                                    <div class="text-fg-muted" x-text="n"></div>
+                                                </template>
+                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
+                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </article>
+                            </template>
+                        </div>
+                    </template>
+
+                    {# per question #}
+                    <template x-if="resultsView === 'question'">
+                        <div class="flex flex-col gap-22">
+                            <template x-for="q in report.questionCards" :key="q.id">
+                                {# card #}
+                                <article class="border border-line p-22">
+                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
+                                        <div class="text-subheading min-w-0 break-words" x-text="q.label"></div>
+                                        <div class="text-fg-muted" x-text="q.metricsLine"></div>
+                                    </div>
+                                    <div class="py-15 border-b border-line text-fg-muted" x-text="q.question"></div>
+                                    <template x-for="e in q.entries" :key="e.model">
+                                        {# eval block #}
+                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+                                            <div class="w-120 shrink-0">
+                                                <div class="text-fg-muted break-words" x-text="e.short" :title="e.model"></div>
+                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
+                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
+                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
+                                            </div>
+                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
+                                                <div class="text-fg-muted" x-text="e.rankText"></div>
+                                                <template x-for="(n, ni) in e.notes" :key="ni">
+                                                    <div class="text-fg-muted" x-text="n"></div>
+                                                </template>
+                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
+                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </article>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            {# references #}
+            <section class="flex flex-col">
+                <div class="pb-8 border-b border-line text-fg-muted">04 reference answers</div>
+                <template x-for="r in report.references" :key="r.id">
+                    <details class="group border-b border-line">
+                        <summary class="py-12 flex gap-12 text-fg-muted hover:text-fg">
+                            <span aria-hidden="true" class="w-8 group-open:hidden">+</span>
+                            <span aria-hidden="true" class="w-8 hidden group-open:inline">–</span>
+                            <span class="min-w-0 break-words" x-text="r.title"></span>
+                        </summary>
+                        <div class="pb-15 flex flex-col gap-12">
+                            <div class="text-fg-muted" x-text="r.question"></div>
+                            <pre class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="r.text"></pre>
+                        </div>
+                    </details>
+                </template>
+            </section>
+
+        </div>
+    </template>
+</div>
+{% endblock %}
+
+{% block archive %}
+<div class="flex flex-col">
+    <div class="pb-8 border-b border-line text-fg-muted">archive</div>
+
+    <div x-show="historyError" x-cloak role="alert"
+         class="mt-15 border border-warn px-15 py-12 text-warn flex flex-col gap-8">
+        <span x-text="historyError"></span>
+        <button type="button" @click="loadHistory()"
+                class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
+    </div>
+
+    <div x-show="historyLoaded && !historyError && history.length === 0" x-cloak
+         class="py-15 text-fg-muted">no runs yet. finished evaluations appear here.</div>
+
+    <template x-for="r in history" :key="r.task_id">
+        {# archive-item #}
+        <button type="button" @click="openRun(r.task_id)" :disabled="busy"
+                :aria-current="activeRunId === r.task_id ? 'true' : null"
+                class="block w-full text-left py-15 border-b border-line enabled:hover:bg-bg disabled:cursor-not-allowed">
+            <span class="flex items-center gap-8 text-subheading"
+                  :class="activeRunId === r.task_id ? 'text-fg' : 'text-fg-muted'">
+                <span x-show="activeRunId === r.task_id" class="size-6 shrink-0 bg-fg" aria-hidden="true"></span>
+                <span class="min-w-0 break-words" x-text="r.tag_name"></span>
+            </span>
+            <span class="mt-8 block text-fg-muted">
+                <span class="block" x-text="r.timestamp"></span>
+                <span class="block" x-text="r.models_tested + ' models · ' + r.questions_count + ' qs'"></span>
+                <span class="block break-words" x-text="'judge: ' + r.judge_model"></span>
+            </span>
+        </button>
+    </template>
+</div>
+{% endblock %}

@@ -15,7 +15,7 @@
         <div class="flex items-center gap-33">
             <button type="button" @click="setupOpen = !setupOpen"
                     :aria-expanded="setupOpen" aria-controls="setup"
-                    class="flex flex-col items-center gap-6"
+                    class="flex flex-col items-center gap-6 hover:text-fg"
                     :class="setupOpen ? 'text-fg' : 'text-fg-muted'">
                 <span class="relative block size-20 border border-fg">
                     <span class="absolute -top-px -bottom-px bg-fg"
@@ -30,7 +30,7 @@
         </div>
         <button type="button" @click="archiveOpen = !archiveOpen"
                 :aria-expanded="archiveOpen" aria-controls="archive"
-                class="flex flex-col items-center gap-6"
+                class="flex flex-col items-center gap-6 hover:text-fg"
                 :class="archiveOpen ? 'text-fg' : 'text-fg-muted'">
             <span class="relative block size-20 border border-fg">
                 <span class="absolute -top-px -bottom-px bg-fg"
@@ -46,7 +46,7 @@
             {% block setup %}{% endblock %}
         </aside>
 
-        <main class="flex-1 min-w-0 p-33 overflow-y-auto">
+        <main x-ref="main" class="flex-1 min-w-0 p-33 overflow-y-auto">
             {% block main %}{% endblock %}
         </main>
 

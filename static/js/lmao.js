@@ -135,6 +135,7 @@ document.addEventListener("alpine:init", () => {
             const token = ++openToken;
             this.activeRunId = id;
             this.view = "results";
+            if (this.$refs?.main) this.$refs.main.scrollTop = 0;
             this.results = null;
             this.report = null;
             this.resultsError = "";
@@ -371,14 +372,28 @@ document.addEventListener("alpine:init", () => {
         },
 
         failRun(message) {
+            // Rows that were in flight will never finish: stop their animation.
+            this.run.steps.forEach((step) => {
+                if (step.state === "running") {
+                    step.state = "error";
+                    step.meta = "interrupted";
+                }
+            });
             this.run.status = "error";
             this.run.error = message;
             this.run.endedAt = Date.now();
             this.stopStream();
         },
 
+        // Back to the form: after an error the setup panel may still be closed.
         dismissRun() {
             this.view = "idle";
+            this.setupOpen = true;
+        },
+
+        switchTab(next) {
+            this.resultsView = next;
+            this.$nextTick(() => document.getElementById(`tab-${next}`)?.focus());
         },
 
         // --- row helpers ----------------------------------------------------

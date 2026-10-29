@@ -149,6 +149,8 @@
 {# running #}
 <div x-show="view === 'running'" x-cloak class="flex flex-col gap-33">
 
+    <div class="sr-only" aria-live="polite" x-text="run.status === 'running' ? ('step ' + run.done + ' of ' + run.total) : ''"></div>
+
     <div class="flex flex-col gap-15">
         <div class="flex justify-between items-center">
             <div class="flex items-center gap-8"
@@ -163,7 +165,8 @@
                 <span x-text="run.done + ' / ' + run.total"></span>
             </div>
         </div>
-        <div role="progressbar" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100" class="h-4 bg-line">
+        <div role="progressbar" aria-label="evaluation progress" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100"
+             :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="h-4 bg-line">
             <div class="h-4 bg-fg" :style="'width:' + pct + '%'"></div>
         </div>
     </div>
@@ -172,7 +175,7 @@
          class="border border-warn px-15 py-12 text-warn flex flex-col gap-12">
         <span x-text="run.error"></span>
         <button type="button" @click="dismissRun()"
-                class="self-start border border-warn px-15 py-9 hover:bg-line">dismiss</button>
+                class="self-start border border-warn px-15 py-9 hover:bg-line">back to setup</button>
     </div>
 
     <template x-for="g in phaseGroups" :key="g.phase">
@@ -302,17 +305,21 @@
                 <div class="flex justify-between items-center pb-8 border-b border-line">
                     <div class="text-fg-muted">03 view</div>
                     {# view-tab #}
-                    <div class="flex" role="tablist" aria-label="results view">
+                    <div class="flex" role="tablist" aria-label="results view"
+                         @keydown.arrow-right.prevent="switchTab('question')"
+                         @keydown.arrow-left.prevent="switchTab('model')"
+                         @keydown.home.prevent="switchTab('model')"
+                         @keydown.end.prevent="switchTab('question')">
                         <button type="button" role="tab" id="tab-model"
-                                :aria-selected="resultsView === 'model'" aria-controls="results-panel"
+                                :aria-selected="resultsView === 'model'" :tabindex="resultsView === 'model' ? 0 : -1" aria-controls="results-panel"
                                 @click="resultsView = 'model'"
                                 class="px-15 py-9 border"
-                                :class="resultsView === 'model' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted'">per model</button>
+                                :class="resultsView === 'model' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted hover:text-fg'">per model</button>
                         <button type="button" role="tab" id="tab-question"
-                                :aria-selected="resultsView === 'question'" aria-controls="results-panel"
+                                :aria-selected="resultsView === 'question'" :tabindex="resultsView === 'question' ? 0 : -1" aria-controls="results-panel"
                                 @click="resultsView = 'question'"
                                 class="px-15 py-9 border"
-                                :class="resultsView === 'question' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted'">per question</button>
+                                :class="resultsView === 'question' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted hover:text-fg'">per question</button>
                     </div>
                 </div>
 
@@ -395,8 +402,12 @@
             <section class="flex flex-col">
                 <div class="pb-8 border-b border-line text-fg-muted">04 reference answers</div>
                 <template x-for="r in report.references" :key="r.id">
-                    <details class="border-b border-line">
-                        <summary class="py-12 cursor-pointer text-fg-muted" x-text="r.title"></summary>
+                    <details class="group border-b border-line">
+                        <summary class="py-12 flex gap-12 text-fg-muted hover:text-fg">
+                            <span aria-hidden="true" class="w-8 group-open:hidden">+</span>
+                            <span aria-hidden="true" class="w-8 hidden group-open:inline">–</span>
+                            <span class="min-w-0 break-words" x-text="r.title"></span>
+                        </summary>
                         <div class="pb-15 flex flex-col gap-12">
                             <div class="text-fg-muted" x-text="r.question"></div>
                             <pre class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="r.text"></pre>
@@ -428,7 +439,7 @@
         {# archive-item #}
         <button type="button" @click="openRun(r.task_id)" :disabled="busy"
                 :aria-current="activeRunId === r.task_id ? 'true' : null"
-                class="block w-full text-left py-15 border-b border-line disabled:cursor-not-allowed">
+                class="block w-full text-left py-15 border-b border-line enabled:hover:bg-bg disabled:cursor-not-allowed">
             <span class="flex items-center gap-8 text-subheading"
                   :class="activeRunId === r.task_id ? 'text-fg' : 'text-fg-muted'">
                 <span x-show="activeRunId === r.task_id" class="size-6 shrink-0 bg-fg" aria-hidden="true"></span>

@@ -49,6 +49,24 @@
       50% { opacity: 0.25; }
     }
   }
+
+  /* Base layer: utilities (outline-none, cursor-not-allowed...) still win. */
+  @layer base {
+    :focus-visible {
+      outline: 1px solid var(--color-fg);
+      outline-offset: 2px;
+    }
+    button:not(:disabled),
+    summary {
+      cursor: pointer;
+    }
+    summary {
+      list-style: none;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+  }
 </style>
 
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>

@@ -7,6 +7,41 @@ function shortName(name) {
     return name.replace(/^hf\.co\//, "").replace(/-GGUF:[^:\s]+$/i, "");
 }
 
+// 'x-GGUF:Q4_K_M' -> 'Q4_K_M', 'llama3:8b' -> '8b', 'llama3' -> 'latest'
+function variantOf(name) {
+    const quant = /-GGUF:([^:\s]+)$/i.exec(name);
+    if (quant) return quant[1];
+    const tag = /:([^:/\s]+)$/.exec(name);
+    return tag ? tag[1] : "latest";
+}
+
+// Display names for a set of models: { fullName: displayName }.
+// Names whose short form collides get the quantisation as a suffix
+// ('foo · Q4_K_M' / 'foo · Q8_0'); if that is still ambiguous, the full name.
+function shortNames(names) {
+    const unique = [...new Set((names || []).filter((n) => typeof n === "string" && n))];
+    const groups = new Map();
+    unique.forEach((name) => {
+        const short = shortName(name);
+        if (!groups.has(short)) groups.set(short, []);
+        groups.get(short).push(name);
+    });
+
+    const out = {};
+    groups.forEach((group, short) => {
+        if (group.length === 1) {
+            out[group[0]] = short;
+            return;
+        }
+        const variants = group.map(variantOf);
+        const distinct = new Set(variants).size === group.length;
+        group.forEach((name, i) => {
+            out[name] = distinct ? `${short} · ${variants[i]}` : name;
+        });
+    });
+    return out;
+}
+
 // 0 -> '01', 11 -> '12'
 function pad2(index) {
     return String(index + 1).padStart(2, "0");
@@ -26,7 +61,9 @@ function totalSteps(questionCount, candidateCount) {
 }
 
 // All rows of a run in the `queued` state, built from the request payload.
-function buildSteps(judge, candidates, questionCount) {
+// `names` is the map from shortNames(); missing names fall back to shortName().
+function buildSteps(judge, candidates, questionCount, names = {}) {
+    const display = (m) => names[m] || shortName(m);
     const ids = Array.from({ length: questionCount }, (_, i) => `q${i + 1}`);
     const unique = [...new Set(candidates)];
     const row = (phase, model, question, label) => ({
@@ -40,17 +77,18 @@ function buildSteps(judge, candidates, questionCount) {
         startedAt: null, // client clock, for the live timer
         startTs: null, // server timestamp, for the final duration
         loading: false, // first call of a model load group: the load notice may apply
+        announced: false, // the load notice was already announced to screen readers
     });
 
     const steps = [];
     ids.forEach((q) => steps.push(row("reference", judge, q, `reference ${q}`)));
     unique.forEach((m) =>
-        ids.forEach((q) => steps.push(row("answer", m, q, `${shortName(m)} · ${q}`))),
+        ids.forEach((q) => steps.push(row("answer", m, q, `${display(m)} · ${q}`))),
     );
     // Local mode grades question by question.
     ids.forEach((q) =>
         unique.forEach((m) =>
-            steps.push(row("grading", m, q, `judge · ${shortName(m)} · ${q}`)),
+            steps.push(row("grading", m, q, `judge · ${display(m)} · ${q}`)),
         ),
     );
     steps.push(row("summary", judge, null, "final summary"));
@@ -65,8 +103,9 @@ function loadGroup(phase, model, cloud) {
     return phase === "reference" ? "judge-1" : "judge-2";
 }
 
+// Empty for missing, broken or negative durations (clock skew, lost start event).
 function fmtSeconds(sec) {
-    return typeof sec === "number" && isFinite(sec) ? `${sec.toFixed(1)} s` : "";
+    return typeof sec === "number" && isFinite(sec) && sec >= 0 ? `${sec.toFixed(1)} s` : "";
 }
 
 // 151 -> '02:31'
@@ -92,6 +131,11 @@ const CATEGORY_LABELS = {
     broken_logic: "broken logic",
     garbage: "garbage",
 };
+// One wording for questions without a reference, everywhere in the UI.
+const NO_REFERENCE = "excluded from the scores";
+
+// A run file the UI cannot read: the message is shown to the user as is.
+class ReportFormatError extends Error {}
 
 function fmtNum(value) {
     return value === null || value === undefined ? "–" : String(value);
@@ -158,6 +202,16 @@ function parseMarkdown(text) {
     return blocks;
 }
 
+function isFailed(result) {
+    return result.status === "generation_error" || result.status === "judge_error";
+}
+
+function questionLabel(question) {
+    const tag =
+        question.tag && String(question.tag).toLowerCase() !== question.id ? ` · ${question.tag}` : "";
+    return `${question.id}${tag}`;
+}
+
 function matrixCell(question, result) {
     if (result.status === "generation_error") {
         return { text: "err", warn: true, muted: false, title: result.error || "" };
@@ -167,9 +221,9 @@ function matrixCell(question, result) {
     }
     let title = "";
     if (result.truncated) title = "truncated answer";
-    else if (question.no_reference) title = "no reference: not in the median";
+    else if (question.no_reference) title = `no reference: ${NO_REFERENCE}`;
     return {
-        text: `${result.score}${result.truncated ? "*" : ""}`,
+        text: `${fmtNum(result.score)}${result.truncated ? "*" : ""}`,
         warn: false,
         muted: Boolean(question.no_reference),
         title,
@@ -178,19 +232,18 @@ function matrixCell(question, result) {
 
 function evalEntry(question, result, index) {
     const generationFailed = result.status === "generation_error";
-    const failed = generationFailed || result.status === "judge_error";
+    const failed = isFailed(result);
     const notes = [];
     if (result.truncated) notes.push("truncated answer: it cannot count as a pass");
-    if (question.no_reference) notes.push("no reference answer: not included in the median");
+    if (question.no_reference) notes.push(`no reference answer: ${NO_REFERENCE}`);
 
-    const tag = question.tag && question.tag.toLowerCase() !== question.id ? ` · ${question.tag}` : "";
     return {
         qid: question.id,
         index,
-        label: `${question.id}${tag}`,
-        question: question.question,
+        label: questionLabel(question),
+        question: question.question || "",
         error: failed,
-        scoreText: failed ? "err" : String(result.score),
+        scoreText: failed ? "err" : fmtNum(result.score),
         caption: failed ? (generationFailed ? "generation failed" : "grading failed") : "/ 100",
         category: failed ? "" : CATEGORY_LABELS[result.category] || result.category || "",
         comment: failed ? result.error || "" : result.comment || "",
@@ -211,21 +264,21 @@ function pad2digits(number) {
 }
 
 // One card per question: the answers of all models, best first, failed ones last.
-function buildQuestionCard(question, summaryModels) {
+function buildQuestionCard(question, summaryModels, display) {
     const rows = [];
     summaryModels.forEach((stats, order) => {
         const result = (question.results || []).find((r) => r.model_name === stats.model);
         if (result) rows.push({ stats, result, order });
     });
 
-    const failed = (result) =>
-        result.status === "generation_error" || result.status === "judge_error";
-    const ranks = competitionRanks(rows.map(({ result }) => (failed(result) ? null : result.score)));
+    const ranks = competitionRanks(
+        rows.map(({ result }) => (isFailed(result) ? null : (result.score ?? null))),
+    );
 
     const entries = rows.map(({ stats, result, order }, i) => ({
         ...evalEntry(question, result, order),
         model: stats.model,
-        short: shortName(stats.model),
+        short: display(stats.model),
         rank: ranks[i],
         rankText:
             ranks[i] === null
@@ -238,23 +291,36 @@ function buildQuestionCard(question, summaryModels) {
             (a.rank === null) - (b.rank === null) || (a.rank ?? 0) - (b.rank ?? 0) || a.order - b.order,
     );
 
-    const source = question.reference.source === "none" ? "no reference" : `${question.reference.source} reference`;
-    const tag = question.tag && question.tag.toLowerCase() !== question.id ? ` · ${question.tag}` : "";
+    const source = (question.reference || {}).source || "none";
     return {
         id: question.id,
-        label: `${question.id}${tag}`,
-        question: question.question,
-        metricsLine: `${rows.length} models · ${source}`,
+        label: questionLabel(question),
+        question: question.question || "",
+        metricsLine: `${rows.length} models · ${source === "none" ? "no reference" : `${source} reference`}`,
         entries,
     };
 }
 
 // Everything the results screen shows, computed once per opened run.
+// Throws ReportFormatError for files the UI cannot read (older schema).
 function buildReport(data) {
-    const questions = data.questions_results || [];
+    if (
+        !data ||
+        !Array.isArray(data.questions_results) ||
+        !data.summary ||
+        !Array.isArray(data.summary.models)
+    ) {
+        throw new ReportFormatError("this run was saved in an older format and cannot be shown.");
+    }
+
+    const questions = data.questions_results;
     const summary = data.summary;
-    const rec = summary.recommendation;
+    const rec = summary.recommendation || {};
     const metrics = data.metrics || {};
+    const summaryModels = summary.models.filter((s) => s && typeof s.model === "string");
+
+    const names = shortNames([...summaryModels.map((s) => s.model), rec.model]);
+    const display = (m) => names[m] || shortName(m);
 
     const notes = [];
     if (data.judge_is_candidate) {
@@ -262,15 +328,13 @@ function buildReport(data) {
     }
     const withoutReference = questions.filter((q) => q.no_reference).length;
     if (withoutReference) {
-        notes.push(
-            `${withoutReference} question(s) have no reference answer and are excluded from the scores.`,
-        );
+        notes.push(`${withoutReference} question(s) have no reference answer: ${NO_REFERENCE}.`);
     }
     if (rec.model && rec.confidence === "low") {
         notes.push("low confidence: too few graded questions.");
     }
 
-    const models = summary.models.map((stats) => {
+    const models = summaryModels.map((stats) => {
         const cells = [];
         const entries = [];
         questions.forEach((question, index) => {
@@ -284,10 +348,14 @@ function buildReport(data) {
         });
 
         const total = metrics[stats.model] || {};
-        const pass = stats.pass_rate === null ? "–" : `${Math.round(stats.pass_rate * 100)}%`;
+        const pass = stats.pass_rate == null ? "–" : `${Math.round(stats.pass_rate * 100)}%`;
+        const totalTime =
+            typeof total.total_time_sec === "number" && total.total_time_sec > 0
+                ? `${total.total_time_sec.toFixed(1)} s total`
+                : null;
         return {
             model: stats.model,
-            short: shortName(stats.model),
+            short: display(stats.model),
             median: fmtNum(stats.median),
             passRate: pass,
             tps: fmtNum(stats.median_tps),
@@ -297,32 +365,33 @@ function buildReport(data) {
             metricsLine: [
                 `median ${fmtNum(stats.median)}`,
                 `pass ${pass}`,
-                `fails ${stats.fails}`,
-                `critical ${stats.critical_fails}`,
-                `errors ${stats.errors}`,
-                `judge errors ${stats.judge_errors}`,
+                `fails ${fmtNum(stats.fails)}`,
+                `critical ${fmtNum(stats.critical_fails)}`,
+                `errors ${fmtNum(stats.errors)}`,
+                `judge errors ${fmtNum(stats.judge_errors)}`,
                 `${fmtNum(stats.median_tps)} t/s`,
-                total.total_time_sec ? `${total.total_time_sec.toFixed(1)} s total` : null,
+                totalTime,
             ]
                 .filter(Boolean)
                 .join(" · "),
         };
     });
 
-    const finished = data.finished_at ? data.finished_at.replace("T", " ").slice(0, 16) : "";
+    const finished =
+        typeof data.finished_at === "string" ? data.finished_at.replace("T", " ").slice(0, 16) : "";
     return {
         meta: [
             finished && `finished ${finished}`,
-            `judge: ${data.judge_model}`,
+            data.judge_model && `judge: ${data.judge_model}`,
             data.mode === "cloud" ? "cloud judge" : "local judge",
         ]
             .filter(Boolean)
             .join(" · "),
         verdict: {
-            model: rec.model,
-            short: rec.model ? shortName(rec.model) : "",
+            model: rec.model || null,
+            short: rec.model ? display(rec.model) : "",
             label: rec.model ? "recommended" : "no recommendation",
-            rule: RULE_LABELS[rec.rule] || rec.rule,
+            rule: RULE_LABELS[rec.rule] || rec.rule || "",
         },
         notes,
         summaryBlocks: parseMarkdown(summary.text),
@@ -330,12 +399,15 @@ function buildReport(data) {
         grid: `grid-template-columns:minmax(160px,1fr) 64px 64px repeat(${questions.length},48px) 64px 64px`,
         questionHeads: questions.map((q) => ({ id: q.id, title: q.tag || "" })),
         models,
-        questionCards: questions.map((q) => buildQuestionCard(q, summary.models)),
-        references: questions.map((q) => ({
-            id: q.id,
-            title: `${q.id} · ${q.tag || "–"} · ${q.reference.source}`,
-            question: q.question,
-            text: q.reference.text || "no reference answer.",
-        })),
+        questionCards: questions.map((q) => buildQuestionCard(q, summaryModels, display)),
+        references: questions.map((q) => {
+            const ref = q.reference || {};
+            return {
+                id: q.id,
+                title: `${q.id} · ${q.tag || "–"} · ${ref.source || "none"}`,
+                question: q.question || "",
+                text: ref.text || "no reference answer.",
+            };
+        }),
     };
 }

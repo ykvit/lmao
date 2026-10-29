@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_components.html" as ui %}
 
 {% block setup %}
-<form @submit.prevent="submit()" novalidate
+<form @submit.prevent="submit()" @input="formError = ''" @change="formError = ''" novalidate
       class="min-h-full flex flex-col justify-between gap-22">
 
     <div class="flex flex-col gap-22">
@@ -15,71 +16,43 @@
                             class="w-full appearance-none bg-bg border border-line pl-12 pr-36 py-10 text-fg focus:border-fg outline-none disabled:text-fg-muted">
                         <option value="" disabled class="bg-bg">select judge</option>
                         <template x-for="m in models" :key="m">
-                            <option :value="m" x-text="shortName(m)" :title="m" class="bg-bg"></option>
+                            <option :value="m" x-text="label(m)" :title="m" class="bg-bg"></option>
                         </template>
                     </select>
-                    <svg class="absolute right-12 top-1/2 -translate-y-1/2 pointer-events-none"
+                    <svg class="absolute right-12 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
                          width="12" height="12" viewBox="0 0 12 12" fill="none"
-                         stroke="#b2b2b2" aria-hidden="true">
+                         stroke="currentColor" aria-hidden="true">
                         <path d="M2 4l4 4 4-4"/>
                     </svg>
                 </span>
             </label>
 
-            {# checkbox-row: cloud judge #}
-            <label class="flex items-start gap-12 py-11 border-b border-line cursor-pointer">
-                <input type="checkbox" x-model="judgeCloud" class="peer sr-only">
-                <span class="mt-4 size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
-                        <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
-                    </svg>
-                </span>
-                <span class="flex flex-col">
-                    <span class="text-fg-muted peer-checked:text-fg">cloud judge</span>
-                    <span class="text-fg-muted">grades in parallel. prompts and answers leave this machine.</span>
-                </span>
-            </label>
+            {{ ui.checkbox_row("judgeCloud", text="cloud judge",
+                               hint="grades in parallel. prompts and answers leave this machine.") }}
         </div>
 
         {# 02 candidates #}
-        <div class="flex flex-col gap-0" role="group" aria-labelledby="candidates-label">
-            <div id="candidates-label" class="pb-8 border-b border-line text-fg-muted">02 candidates</div>
+        <div class="flex flex-col" role="group" aria-labelledby="candidates-label">
+            {{ ui.section_label("02 candidates", id="candidates-label") }}
 
-            <div x-show="modelsLoaded && models.length === 0" x-cloak
-                 class="pt-12 flex flex-col gap-8 text-warn" role="alert">
-                <span>no models found. is ollama running?</span>
-                <button type="button" @click="loadModels()"
-                        class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
-            </div>
+            {{ ui.warn_notice("modelsLoaded && models.length === 0",
+                              "'no models found. is ollama running?'",
+                              action="loadModels()", action_label="reload", extra="mt-12") }}
 
             <div class="max-h-240 overflow-y-auto">
                 <template x-for="m in models" :key="m">
-                    {# checkbox-row #}
-                    <label class="flex items-center gap-12 py-11 border-b border-line cursor-pointer">
-                        <input type="checkbox" :value="m" x-model="selected" class="peer sr-only">
-                        <span class="size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
-                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
-                                <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
-                            </svg>
-                        </span>
-                        <span class="min-w-0 break-words text-fg-muted peer-checked:text-fg"
-                              x-text="shortName(m)" :title="m"></span>
-                    </label>
+                    {{ ui.checkbox_row("selected", value="m", text_expr="label(m)", title_expr="m") }}
                 </template>
             </div>
         </div>
 
         {# 03 judge criteria #}
-        <label class="flex flex-col gap-8">
-            <span class="text-fg-muted">03 judge criteria (optional)</span>
-            <textarea x-model="baseRationale" rows="3"
-                      placeholder="applied to every question"
-                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
-        </label>
+        {{ ui.field("03 judge criteria (optional)", "baseRationale", rows=3,
+                    placeholder="applied to every question") }}
 
         {# 04 test cases #}
         <div class="flex flex-col gap-12">
-            <div class="pb-8 border-b border-line text-fg-muted">04 test cases</div>
+            {{ ui.section_label("04 test cases") }}
 
             <template x-for="(c, i) in cases" :key="c.id">
                 <div>
@@ -94,27 +67,11 @@
                                         class="text-fg-muted hover:text-fg">remove</button>
                             </span>
                         </div>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">tag (optional)</span>
-                            <input type="text" x-model="c.tag" placeholder="e.g. python"
-                                   class="w-full bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none">
-                        </label>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">question</span>
-                            <textarea x-model="c.question" rows="3"
-                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
-                        </label>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">specific criteria (optional)</span>
-                            <textarea x-model="c.rationale" rows="2"
-                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
-                        </label>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">reference answer (optional)</span>
-                            <textarea x-model="c.reference" rows="2"
-                                      placeholder="if empty, the judge writes one"
-                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
-                        </label>
+                        {{ ui.field("tag (optional)", "c.tag", placeholder="e.g. python") }}
+                        {{ ui.field("question", "c.question", rows=3) }}
+                        {{ ui.field("specific criteria (optional)", "c.rationale", rows=2) }}
+                        {{ ui.field("reference answer (optional)", "c.reference", rows=2,
+                                    placeholder="if empty, the judge writes one") }}
                     </div>
 
                     {# collapsed #}
@@ -134,8 +91,7 @@
     </div>
 
     <div class="flex flex-col gap-12">
-        <div x-show="formError" x-cloak role="alert"
-             class="border border-warn px-15 py-12 text-warn" x-text="formError"></div>
+        {{ ui.warn_notice("formError", "formError") }}
         <button type="submit" :disabled="submitting || busy"
                 class="w-full text-left bg-fg text-bg px-22 py-13 hover:bg-fg-muted disabled:bg-line disabled:text-fg-muted disabled:cursor-not-allowed">run evaluation</button>
     </div>
@@ -143,20 +99,37 @@
 {% endblock %}
 
 {% block main %}
-<div x-show="view === 'idle'" x-cloak class="text-fg-muted">
-    select models, add test cases and press run evaluation.
+
+{# first screen #}
+<div x-show="view === 'idle'" x-cloak class="min-h-full flex items-center justify-center">
+    <div class="w-full max-w-560 flex flex-col gap-22">
+        <div class="flex flex-col gap-8">
+            <div class="text-heading">new evaluation</div>
+            <div class="text-fg-muted">the judge writes reference answers, grades every candidate and compares them in one matrix.</div>
+        </div>
+        <div class="flex flex-col">
+            {{ ui.section_label("checklist") }}
+            <template x-for="r in checklist" :key="r.key">
+                {{ ui.status_row("r.state", "r.label", "r.meta") }}
+            </template>
+        </div>
+        <div class="flex items-center gap-12">
+            <button type="button" x-show="busy" x-cloak @click="showRun()"
+                    class="border border-fg-muted text-fg px-22 py-13 hover:border-fg">back to run</button>
+            <button type="button" x-show="!setupOpen" x-cloak @click="setupOpen = true"
+                    class="border border-fg-muted text-fg px-22 py-13 hover:border-fg">open setup</button>
+        </div>
+    </div>
 </div>
+
 {# running #}
 <div x-show="view === 'running'" x-cloak class="flex flex-col gap-33">
-
-    <div class="sr-only" aria-live="polite" x-text="run.status === 'running' ? ('step ' + run.done + ' of ' + run.total) : ''"></div>
 
     <div class="flex flex-col gap-15">
         <div class="flex justify-between items-center">
             <div class="flex items-center gap-8"
                  :class="run.status === 'error' ? 'text-warn' : 'text-fg'">
-                <span x-show="run.status === 'running'" aria-hidden="true"
-                      class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
+                {{ ui.activity_dot("run.status === 'running'") }}
                 <span class="text-subheading"
                       x-text="run.status === 'error' ? 'stopped' : 'running'"></span>
             </div>
@@ -165,41 +138,50 @@
                 <span x-text="run.done + ' / ' + run.total"></span>
             </div>
         </div>
+
+        {# Overall progress for assistive tech; the segments below are the visual. #}
         <div role="progressbar" aria-label="evaluation progress" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100"
-             :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="h-4 bg-line">
-            <div class="h-4 bg-fg" :style="'width:' + pct + '%'"></div>
+             :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="sr-only"></div>
+
+        {# One segment per phase, equal width: phases fill independently. #}
+        <div class="grid grid-cols-4 gap-33">
+            <template x-for="p in phaseProgress" :key="p.phase">
+                <button type="button" @click="scrollToPhase(p.phase)"
+                        :aria-label="p.title + ': ' + p.finished + ' of ' + p.total + (p.errors ? ', ' + p.errors + ' errors' : '')"
+                        class="min-w-0 flex flex-col gap-8 text-left">
+                    <span class="flex items-center justify-between gap-8">
+                        <span class="min-w-0 flex items-center gap-8" :class="stateClass(p.state)">
+                            {{ ui.activity_dot("p.state === 'running'") }}
+                            <span class="truncate" x-text="p.short"></span>
+                        </span>
+                        <span class="shrink-0 text-fg-muted">
+                            <span x-text="p.finished + ' / ' + p.total"></span><span
+                                  x-show="p.errors" class="text-warn" x-text="' · ' + p.errors + ' err'"></span>
+                        </span>
+                    </span>
+                    <span class="block h-4 bg-line">
+                        <span class="block h-4 bg-fg transition-[width] duration-200 ease-out motion-reduce:transition-none"
+                              :style="'width:' + p.pct + '%'"></span>
+                    </span>
+                </button>
+            </template>
         </div>
     </div>
 
-    <div x-show="run.status === 'error'" x-cloak role="alert"
-         class="border border-warn px-15 py-12 text-warn flex flex-col gap-12">
-        <span x-text="run.error"></span>
-        <button type="button" @click="dismissRun()"
-                class="self-start border border-warn px-15 py-9 hover:bg-line">back to setup</button>
-    </div>
+    {{ ui.warn_notice("run.status === 'error'", "run.error",
+                      action="dismissRun()", action_label="back to setup") }}
 
     <template x-for="g in phaseGroups" :key="g.phase">
-        <div class="flex flex-col">
-            <div class="pb-8 border-b border-line text-fg-muted" x-text="g.title"></div>
+        <div class="flex flex-col scroll-mt-33" :id="'phase-' + g.phase">
+            {{ ui.section_label(text_expr="g.title") }}
             <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
-                {# status-row #}
                 <div>
-                    <div class="flex items-start gap-15 py-10 border-b border-line">
-                        <div class="w-72 shrink-0 flex items-center gap-8" :class="stateClass(s.state)">
-                            <span x-show="s.state === 'running'" aria-hidden="true"
-                                  class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
-                            <span x-text="s.state"></span>
-                        </div>
-                        <div class="flex-1 min-w-0 break-words"
-                             :class="(s.state === 'queued' || s.state === 'skipped') && 'text-fg-muted'"
-                             x-text="s.label" :title="s.model"></div>
-                        <div class="max-w-320 break-words text-fg-muted" x-text="rowMeta(s)"></div>
-                    </div>
-                    {# load notice #}
-                    <div class="pl-87 py-10 border-b border-line" x-show="showLoadNotice(s)" x-cloak aria-live="polite">
+                    {{ ui.status_row("s.state", "s.label", "rowMeta(s)", title_expr="s.model") }}
+                    {# load notice: announced once through the page live region #}
+                    <div x-show="showLoadNotice(s)" x-cloak class="pl-87 py-10 border-b border-line">
                         <div class="bg-surface border border-line p-15 flex flex-col gap-8">
                             <div class="flex items-center gap-8">
-                                <span class="size-8 bg-link animate-breathe motion-reduce:animate-none" aria-hidden="true"></span>
+                                {{ ui.activity_dot() }}
                                 the model may still be loading — this is normal
                             </div>
                             <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
@@ -210,23 +192,23 @@
         </div>
     </template>
 </div>
-{# results, per model #}
+
+{# results #}
 <div x-show="view === 'results'" x-cloak class="flex flex-col gap-33">
-    <div x-show="resultsError" role="alert"
-         class="border border-warn px-15 py-12 text-warn" x-text="resultsError"></div>
+    {{ ui.warn_notice("resultsError", "resultsError") }}
     <div x-show="!resultsError && !report" class="text-fg-muted">loading…</div>
 
     <template x-if="report">
         <div class="flex flex-col gap-33">
 
             <div class="flex flex-col gap-8">
-                <div class="text-heading" x-text="runTitle"></div>
+                <div class="text-heading break-words" x-text="runTitle"></div>
                 <div class="text-fg-muted break-words" x-text="report.meta"></div>
             </div>
 
-            {# summary #}
+            {# 01 summary #}
             <section class="flex flex-col gap-15">
-                <div class="pb-8 border-b border-line text-fg-muted">01 summary</div>
+                {{ ui.section_label("01 summary") }}
                 <div class="flex flex-col gap-8">
                     <div class="text-fg-muted" x-text="report.verdict.label"></div>
                     <div x-show="report.verdict.model" class="text-heading break-words"
@@ -267,9 +249,9 @@
                 </div>
             </section>
 
-            {# comparison matrix #}
+            {# 02 comparison matrix #}
             <section class="flex flex-col gap-15">
-                <div class="pb-8 border-b border-line text-fg-muted">02 comparison</div>
+                {{ ui.section_label("02 comparison") }}
                 <div class="overflow-x-auto">
                     <div class="min-w-max">
                         <div class="grid items-center gap-x-15 py-12 border-b border-line text-fg-muted" :style="report.grid">
@@ -297,10 +279,10 @@
                         </template>
                     </div>
                 </div>
-                <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, not in the median</div>
+                <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, excluded from the scores</div>
             </section>
 
-            {# view: per model / per question #}
+            {# 03 view: per model / per question #}
             <section class="flex flex-col gap-22">
                 <div class="flex justify-between items-center pb-8 border-b border-line">
                     <div class="text-fg-muted">03 view</div>
@@ -331,30 +313,10 @@
                     <template x-if="resultsView === 'model'">
                         <div class="flex flex-col gap-22">
                             <template x-for="m in report.models" :key="m.model">
-                                {# card #}
                                 <article class="border border-line p-22">
-                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
-                                        <div class="text-subheading min-w-0 break-words" x-text="m.short" :title="m.model"></div>
-                                        <div class="text-fg-muted" x-text="m.metricsLine"></div>
-                                    </div>
+                                    {{ ui.card_head("m.short", "m.metricsLine", title_tip="m.model") }}
                                     <template x-for="e in m.entries" :key="e.qid">
-                                        {# eval block #}
-                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
-                                            <div class="w-120 shrink-0">
-                                                <div class="text-fg-muted" x-text="e.label"></div>
-                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
-                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
-                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
-                                            </div>
-                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
-                                                <div class="text-fg-muted" x-text="e.question"></div>
-                                                <template x-for="(n, ni) in e.notes" :key="ni">
-                                                    <div class="text-fg-muted" x-text="n"></div>
-                                                </template>
-                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
-                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
-                                            </div>
-                                        </div>
+                                        {{ ui.eval_block("e.label", "e.question") }}
                                     </template>
                                 </article>
                             </template>
@@ -365,31 +327,11 @@
                     <template x-if="resultsView === 'question'">
                         <div class="flex flex-col gap-22">
                             <template x-for="q in report.questionCards" :key="q.id">
-                                {# card #}
                                 <article class="border border-line p-22">
-                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
-                                        <div class="text-subheading min-w-0 break-words" x-text="q.label"></div>
-                                        <div class="text-fg-muted" x-text="q.metricsLine"></div>
-                                    </div>
+                                    {{ ui.card_head("q.label", "q.metricsLine") }}
                                     <div class="py-15 border-b border-line text-fg-muted" x-text="q.question"></div>
                                     <template x-for="e in q.entries" :key="e.model">
-                                        {# eval block #}
-                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
-                                            <div class="w-120 shrink-0">
-                                                <div class="text-fg-muted break-words" x-text="e.short" :title="e.model"></div>
-                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
-                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
-                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
-                                            </div>
-                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
-                                                <div class="text-fg-muted" x-text="e.rankText"></div>
-                                                <template x-for="(n, ni) in e.notes" :key="ni">
-                                                    <div class="text-fg-muted" x-text="n"></div>
-                                                </template>
-                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
-                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
-                                            </div>
-                                        </div>
+                                        {{ ui.eval_block("e.short", "e.rankText", head_title="e.model") }}
                                     </template>
                                 </article>
                             </template>
@@ -398,9 +340,9 @@
                 </div>
             </section>
 
-            {# references #}
+            {# 04 reference answers #}
             <section class="flex flex-col">
-                <div class="pb-8 border-b border-line text-fg-muted">04 reference answers</div>
+                {{ ui.section_label("04 reference answers") }}
                 <template x-for="r in report.references" :key="r.id">
                     <details class="group border-b border-line">
                         <summary class="py-12 flex gap-12 text-fg-muted hover:text-fg">
@@ -410,7 +352,7 @@
                         </summary>
                         <div class="pb-15 flex flex-col gap-12">
                             <div class="text-fg-muted" x-text="r.question"></div>
-                            <pre class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="r.text"></pre>
+                            {{ ui.code_box("r.text") }}
                         </div>
                     </details>
                 </template>
@@ -423,14 +365,10 @@
 
 {% block archive %}
 <div class="flex flex-col">
-    <div class="pb-8 border-b border-line text-fg-muted">archive</div>
+    {{ ui.section_label("archive") }}
 
-    <div x-show="historyError" x-cloak role="alert"
-         class="mt-15 border border-warn px-15 py-12 text-warn flex flex-col gap-8">
-        <span x-text="historyError"></span>
-        <button type="button" @click="loadHistory()"
-                class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
-    </div>
+    {{ ui.warn_notice("historyError", "historyError",
+                      action="loadHistory()", action_label="reload", extra="mt-15") }}
 
     <div x-show="historyLoaded && !historyError && history.length === 0" x-cloak
          class="py-15 text-fg-muted">no runs yet. finished evaluations appear here.</div>
@@ -448,7 +386,7 @@
             <span class="mt-8 block text-fg-muted">
                 <span class="block" x-text="r.timestamp"></span>
                 <span class="block" x-text="r.models_tested + ' models · ' + r.questions_count + ' qs'"></span>
-                <span class="block break-words" x-text="'judge: ' + r.judge_model"></span>
+                <span class="block break-words" x-text="'judge: ' + (r.judge_model || '–')"></span>
             </span>
         </button>
     </template>

@@ -23,7 +23,7 @@ document.addEventListener("alpine:init", () => {
         status: "idle", // idle | running | done | error
         steps: [],
         pos: {}, // step key -> index in `steps` (a lookup through the proxy stays reactive)
-        seen: {}, // load groups that already had a first call
+        seen: {}, // load groups and phases that already had a first call
         cloud: false,
         done: 0,
         total: 0,
@@ -40,14 +40,16 @@ document.addEventListener("alpine:init", () => {
         view: "idle", // idle | running | results
         resultsView: "model", // model | question
 
+        // `short` is the label of the progress segment (a quarter of the width).
         phaseGroups: [
-            { phase: "reference", title: "01 reference answers" },
-            { phase: "answer", title: "02 candidate answers" },
-            { phase: "grading", title: "03 grading" },
-            { phase: "summary", title: "04 summary" },
+            { phase: "reference", title: "01 reference answers", short: "01 reference" },
+            { phase: "answer", title: "02 candidate answers", short: "02 answers" },
+            { phase: "grading", title: "03 grading", short: "03 grading" },
+            { phase: "summary", title: "04 summary", short: "04 summary" },
         ],
 
         models: [],
+        names: {}, // full model name -> display name (see shortNames)
         modelsLoaded: false,
         judge: "",
         judgeCloud: false,
@@ -66,14 +68,17 @@ document.addEventListener("alpine:init", () => {
         results: null,
         report: null,
 
+        announcement: "", // text of the page live region
+
         init() {
             this.loadModels();
             this.loadHistory();
         },
 
-        // A run is in progress: the form and the archive are locked.
+        // A run is in progress: the form and the archive are locked, on every
+        // screen (the wordmark can lead away from the running screen).
         get busy() {
-            return this.view === "running" && this.run.status === "running";
+            return this.run.status === "running";
         },
 
         get runTitle() {
@@ -92,6 +97,117 @@ document.addEventListener("alpine:init", () => {
             return Math.max(0, ((this.run.endedAt ?? this.run.now) - this.run.startedAt) / 1000);
         },
 
+        // Centre of the topbar. Built from the existing state only.
+        // `go`: the run is in progress but another screen is shown.
+        get topStatus() {
+            if (this.run.status === "running") {
+                return {
+                    tone: "text-fg",
+                    dot: true,
+                    go: this.view !== "running",
+                    text: `running · ${fmtClock(this.elapsed)} · ${this.run.done} / ${this.run.total}`,
+                };
+            }
+            if (this.view === "running" && this.run.status === "error") {
+                return { tone: "text-warn", dot: false, go: false, text: "stopped" };
+            }
+            if (this.view === "results") {
+                return { tone: "text-fg", dot: false, go: false, text: this.runTitle || "" };
+            }
+            if (!this.modelsLoaded) {
+                return { tone: "text-fg-muted", dot: false, go: false, text: "connecting…" };
+            }
+            if (this.models.length === 0) {
+                return { tone: "text-warn", dot: false, go: false, text: "no models found" };
+            }
+            const n = this.models.length;
+            return {
+                tone: "text-fg-muted",
+                dot: false,
+                go: false,
+                text: `ollama · ${n} model${n === 1 ? "" : "s"}`,
+            };
+        },
+
+        // One segment per phase, filled from the rows themselves: phases fill
+        // independently (a cloud judge grades while local candidates still answer).
+        // error and skipped rows are finished too; errors are counted separately.
+        get phaseProgress() {
+            return this.phaseGroups.map((g) => {
+                let total = 0;
+                let open = 0; // queued or running
+                let running = 0;
+                let errors = 0;
+                for (const s of this.run.steps) {
+                    if (s.phase !== g.phase) continue;
+                    total += 1;
+                    if (s.state === "queued" || s.state === "running") open += 1;
+                    if (s.state === "running") running += 1;
+                    if (s.state === "error") errors += 1;
+                }
+                const finished = total - open;
+                let state = "queued";
+                if (running) state = "running";
+                else if (total && !open) state = "done";
+                return {
+                    ...g,
+                    total,
+                    finished,
+                    errors,
+                    state,
+                    pct: total ? Math.round((100 * finished) / total) : 0,
+                };
+            });
+        },
+
+        // First screen: the state of the form as status rows.
+        get checklist() {
+            let judge;
+            if (!this.modelsLoaded) judge = { state: "queued", meta: "loading models…" };
+            else if (this.models.length === 0) judge = { state: "error", meta: "no models. is ollama running?" };
+            else if (this.judge) {
+                judge = {
+                    state: "done",
+                    meta: this.label(this.judge) + (this.judgeCloud ? " · cloud" : ""),
+                };
+            } else judge = { state: "queued", meta: "not selected" };
+
+            const picked = this.selected.length;
+            const candidates = picked
+                ? { state: "done", meta: `${picked} selected` }
+                : { state: "queued", meta: "none selected" };
+
+            const ready = this.cases.filter((c) => c.question.trim()).length;
+            const cases =
+                ready === this.cases.length
+                    ? { state: "done", meta: `${ready} ready` }
+                    : { state: "queued", meta: `${ready} of ${this.cases.length} ready` };
+
+            const all = [judge, candidates, cases].every((r) => r.state === "done");
+            let runRow = { state: all ? "ready" : "", meta: all ? "press run evaluation" : "" };
+            if (this.busy) {
+                runRow = { state: "running", meta: `${this.run.done} / ${this.run.total} steps` };
+            }
+            return [
+                { key: "judge", label: "01 judge", ...judge },
+                { key: "candidates", label: "02 candidates", ...candidates },
+                { key: "cases", label: "03 test cases", ...cases },
+                { key: "run", label: "04 run evaluation", ...runRow },
+            ];
+        },
+
+        label(model) {
+            return this.names[model] || shortName(model);
+        },
+
+        // Clears first, so the same text can be announced twice.
+        announce(text) {
+            this.announcement = "";
+            setTimeout(() => {
+                this.announcement = text;
+            }, 50);
+        },
+
         // --- models ---------------------------------------------------------
 
         async loadModels() {
@@ -104,6 +220,7 @@ document.addEventListener("alpine:init", () => {
                 console.error("Failed to load models:", e);
                 this.models = [];
             }
+            this.names = shortNames(this.models);
             this.modelsLoaded = true;
             // Let x-for render the <option>s before the value is set.
             await this.$nextTick();
@@ -146,7 +263,18 @@ document.addEventListener("alpine:init", () => {
                 if (!response.ok) {
                     throw new Error(data.error || `request failed (${response.status})`);
                 }
-                this.report = buildReport(data);
+                let report;
+                try {
+                    report = buildReport(data);
+                } catch (e) {
+                    console.error("Cannot build the report:", e);
+                    throw new Error(
+                        e instanceof ReportFormatError
+                            ? e.message
+                            : "this run cannot be shown: the file has an unexpected format.",
+                    );
+                }
+                this.report = report;
                 this.results = data;
             } catch (e) {
                 console.error("Failed to open run:", e);
@@ -240,6 +368,7 @@ document.addEventListener("alpine:init", () => {
                 payload.judge,
                 payload.candidates,
                 payload.test_cases.length,
+                this.names,
             );
             const pos = {};
             steps.forEach((step, index) => (pos[step.key] = index));
@@ -261,9 +390,7 @@ document.addEventListener("alpine:init", () => {
             this.setupOpen = false;
             this.view = "running";
 
-            timer = setInterval(() => {
-                this.run.now = Date.now();
-            }, 1000);
+            timer = setInterval(() => this.tick(), 1000);
 
             source = new EventSource(`/api/stream/${encodeURIComponent(taskId)}`);
             source.onmessage = (event) => this.onMessage(event);
@@ -275,6 +402,17 @@ document.addEventListener("alpine:init", () => {
                     "connection to the server was lost. the run may still finish: check the archive.",
                 );
             };
+        },
+
+        // One clock for the elapsed time, the row timers and the load notice.
+        tick() {
+            this.run.now = Date.now();
+            for (const step of this.run.steps) {
+                if (step.loading && !step.announced && this.showLoadNotice(step)) {
+                    step.announced = true;
+                    this.announce("the model may still be loading. this is normal.");
+                }
+            }
         },
 
         stopStream() {
@@ -319,20 +457,36 @@ document.addEventListener("alpine:init", () => {
         },
 
         stepStarted(step, event) {
+            // A duplicate start must not reset the timer of a row in flight.
+            if (step.state !== "queued") return;
             step.state = "running";
             step.startedAt = Date.now();
-            step.startTs = Date.parse(event.timestamp);
+            const ts = Date.parse(event.timestamp);
+            step.startTs = Number.isFinite(ts) ? ts : null;
 
-            const group = loadGroup(step.phase, step.model, this.run.cloud);
-            if (group && !this.run.seen[group]) {
-                this.run.seen[group] = true;
+            const phaseKey = `phase:${step.phase}`;
+            if (!this.run.seen[phaseKey]) {
+                this.run.seen[phaseKey] = true;
+                const group = this.phaseGroups.find((g) => g.phase === step.phase);
+                if (group) this.announce(`${group.title.replace(/^\d+\s+/, "")} started`);
+            }
+
+            const loadKey = loadGroup(step.phase, step.model, this.run.cloud);
+            if (loadKey && !this.run.seen[loadKey]) {
+                this.run.seen[loadKey] = true;
                 step.loading = true;
             }
         },
 
         stepDone(step, event) {
+            // Finished rows stay as they are (duplicates, events after `skipped`).
+            if (step.state !== "running" && step.state !== "queued") return;
+
             // Both timestamps come from the server, so its time zone cancels out.
-            const sec = (Date.parse(event.timestamp) - step.startTs) / 1000;
+            // No start event (or a broken timestamp): no duration instead of nonsense.
+            const end = Date.parse(event.timestamp);
+            const sec =
+                step.startTs !== null && Number.isFinite(end) ? (end - step.startTs) / 1000 : NaN;
             const duration = fmtSeconds(sec);
 
             if (event.success) {
@@ -364,9 +518,11 @@ document.addEventListener("alpine:init", () => {
         },
 
         finishRun() {
+            this.run.done = this.run.total; // `completed` may come without `progress`
             this.run.status = "done";
             this.run.endedAt = Date.now();
             this.stopStream();
+            this.announce("evaluation finished. opening the results.");
             this.loadHistory();
             this.openRun(this.run.id);
         },
@@ -380,7 +536,7 @@ document.addEventListener("alpine:init", () => {
                 }
             });
             this.run.status = "error";
-            this.run.error = message;
+            this.run.error = message; // announced by the role="alert" notice
             this.run.endedAt = Date.now();
             this.stopStream();
         },
@@ -389,6 +545,27 @@ document.addEventListener("alpine:init", () => {
         dismissRun() {
             this.view = "idle";
             this.setupOpen = true;
+        },
+
+        // Wordmark: back to the first screen. A run in progress keeps going;
+        // the topbar status and the first screen lead back to it.
+        goHome() {
+            this.view = "idle";
+            if (!this.busy) this.activeRunId = null;
+            if (this.$refs?.main) this.$refs.main.scrollTop = 0;
+        },
+
+        showRun() {
+            this.view = "running";
+            this.activeRunId = this.run.id;
+        },
+
+        // Progress segment -> its group of rows.
+        scrollToPhase(phase) {
+            const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            document
+                .getElementById(`phase-${phase}`)
+                ?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
         },
 
         switchTab(next) {
@@ -402,6 +579,7 @@ document.addEventListener("alpine:init", () => {
             return (
                 {
                     done: "text-fg",
+                    ready: "text-fg",
                     running: "text-link",
                     queued: "text-fg-muted",
                     skipped: "text-fg-muted",
@@ -410,9 +588,14 @@ document.addEventListener("alpine:init", () => {
             );
         },
 
+        isMuted(state) {
+            return state === "queued" || state === "skipped" || !state;
+        },
+
         rowMeta(step) {
             if (step.state === "running" && step.startedAt) {
-                return fmtSeconds((this.run.now - step.startedAt) / 1000);
+                // run.now ticks once a second and can be behind startedAt.
+                return fmtSeconds(Math.max(0, this.run.now - step.startedAt) / 1000);
             }
             return step.meta;
         },

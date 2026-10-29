@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_components.html" as ui %}
 
 {% block setup %}
-<form @submit.prevent="submit()" novalidate
+<form @submit.prevent="submit()" @input="formError = ''" @change="formError = ''" novalidate
       class="min-h-full flex flex-col justify-between gap-22">
 
     <div class="flex flex-col gap-22">
@@ -15,71 +16,43 @@
                             class="w-full appearance-none bg-bg border border-line pl-12 pr-36 py-10 text-fg focus:border-fg outline-none disabled:text-fg-muted">
                         <option value="" disabled class="bg-bg">select judge</option>
                         <template x-for="m in models" :key="m">
-                            <option :value="m" x-text="shortName(m)" :title="m" class="bg-bg"></option>
+                            <option :value="m" x-text="label(m)" :title="m" class="bg-bg"></option>
                         </template>
                     </select>
-                    <svg class="absolute right-12 top-1/2 -translate-y-1/2 pointer-events-none"
+                    <svg class="absolute right-12 top-1/2 -translate-y-1/2 pointer-events-none text-fg-muted"
                          width="12" height="12" viewBox="0 0 12 12" fill="none"
-                         stroke="#b2b2b2" aria-hidden="true">
+                         stroke="currentColor" aria-hidden="true">
                         <path d="M2 4l4 4 4-4"/>
                     </svg>
                 </span>
             </label>
 
-            {# checkbox-row: cloud judge #}
-            <label class="flex items-start gap-12 py-11 border-b border-line cursor-pointer">
-                <input type="checkbox" x-model="judgeCloud" class="peer sr-only">
-                <span class="mt-4 size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
-                        <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
-                    </svg>
-                </span>
-                <span class="flex flex-col">
-                    <span class="text-fg-muted peer-checked:text-fg">cloud judge</span>
-                    <span class="text-fg-muted">grades in parallel. prompts and answers leave this machine.</span>
-                </span>
-            </label>
+            {{ ui.checkbox_row("judgeCloud", text="cloud judge",
+                               hint="grades in parallel. prompts and answers leave this machine.") }}
         </div>
 
         {# 02 candidates #}
-        <div class="flex flex-col gap-0" role="group" aria-labelledby="candidates-label">
-            <div id="candidates-label" class="pb-8 border-b border-line text-fg-muted">02 candidates</div>
+        <div class="flex flex-col" role="group" aria-labelledby="candidates-label">
+            {{ ui.section_label("02 candidates", id="candidates-label") }}
 
-            <div x-show="modelsLoaded && models.length === 0" x-cloak
-                 class="pt-12 flex flex-col gap-8 text-warn" role="alert">
-                <span>no models found. is ollama running?</span>
-                <button type="button" @click="loadModels()"
-                        class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
-            </div>
+            {{ ui.warn_notice("modelsLoaded && models.length === 0",
+                              "'no models found. is ollama running?'",
+                              action="loadModels()", action_label="reload", extra="mt-12") }}
 
             <div class="max-h-240 overflow-y-auto">
                 <template x-for="m in models" :key="m">
-                    {# checkbox-row #}
-                    <label class="flex items-center gap-12 py-11 border-b border-line cursor-pointer">
-                        <input type="checkbox" :value="m" x-model="selected" class="peer sr-only">
-                        <span class="size-14 shrink-0 flex items-center justify-center border border-fg-muted peer-checked:bg-fg peer-checked:border-fg peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-fg [&>svg]:hidden peer-checked:[&>svg]:block">
-                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#000000" aria-hidden="true">
-                                <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
-                            </svg>
-                        </span>
-                        <span class="min-w-0 break-words text-fg-muted peer-checked:text-fg"
-                              x-text="shortName(m)" :title="m"></span>
-                    </label>
+                    {{ ui.checkbox_row("selected", value="m", text_expr="label(m)", title_expr="m") }}
                 </template>
             </div>
         </div>
 
         {# 03 judge criteria #}
-        <label class="flex flex-col gap-8">
-            <span class="text-fg-muted">03 judge criteria (optional)</span>
-            <textarea x-model="baseRationale" rows="3"
-                      placeholder="applied to every question"
-                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
-        </label>
+        {{ ui.field("03 judge criteria (optional)", "baseRationale", rows=3,
+                    placeholder="applied to every question") }}
 
         {# 04 test cases #}
         <div class="flex flex-col gap-12">
-            <div class="pb-8 border-b border-line text-fg-muted">04 test cases</div>
+            {{ ui.section_label("04 test cases") }}
 
             <template x-for="(c, i) in cases" :key="c.id">
                 <div>
@@ -94,27 +67,11 @@
                                         class="text-fg-muted hover:text-fg">remove</button>
                             </span>
                         </div>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">tag (optional)</span>
-                            <input type="text" x-model="c.tag" placeholder="e.g. python"
-                                   class="w-full bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none">
-                        </label>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">question</span>
-                            <textarea x-model="c.question" rows="3"
-                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
-                        </label>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">specific criteria (optional)</span>
-                            <textarea x-model="c.rationale" rows="2"
-                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg focus:border-fg outline-none"></textarea>
-                        </label>
-                        <label class="flex flex-col gap-8">
-                            <span class="text-fg-muted">reference answer (optional)</span>
-                            <textarea x-model="c.reference" rows="2"
-                                      placeholder="if empty, the judge writes one"
-                                      class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
-                        </label>
+                        {{ ui.field("tag (optional)", "c.tag", placeholder="e.g. python") }}
+                        {{ ui.field("question", "c.question", rows=3) }}
+                        {{ ui.field("specific criteria (optional)", "c.rationale", rows=2) }}
+                        {{ ui.field("reference answer (optional)", "c.reference", rows=2,
+                                    placeholder="if empty, the judge writes one") }}
                     </div>
 
                     {# collapsed #}
@@ -134,8 +91,7 @@
     </div>
 
     <div class="flex flex-col gap-12">
-        <div x-show="formError" x-cloak role="alert"
-             class="border border-warn px-15 py-12 text-warn" x-text="formError"></div>
+        {{ ui.warn_notice("formError", "formError") }}
         <button type="submit" :disabled="submitting || busy"
                 class="w-full text-left bg-fg text-bg px-22 py-13 hover:bg-fg-muted disabled:bg-line disabled:text-fg-muted disabled:cursor-not-allowed">run evaluation</button>
     </div>
@@ -143,218 +99,320 @@
 {% endblock %}
 
 {% block main %}
-<div x-show="view === 'idle'" x-cloak class="text-fg-muted">
-    select models, add test cases and press run evaluation.
+
+{# first screen #}
+<div x-show="view === 'idle'" x-cloak class="min-h-full flex items-center justify-center">
+    <div class="w-full max-w-560 flex flex-col gap-22">
+        <div class="flex flex-col gap-8">
+            <div class="text-heading">new evaluation</div>
+            <div class="text-fg-muted">the judge writes reference answers, grades every candidate and compares them in one matrix.</div>
+        </div>
+        <div class="flex flex-col">
+            {{ ui.section_label("checklist") }}
+            <template x-for="r in checklist" :key="r.key">
+                {{ ui.status_row("r.state", "r.label", "r.meta") }}
+            </template>
+        </div>
+        <div class="flex items-center gap-12">
+            <button type="button" x-show="busy" x-cloak @click="showRun()"
+                    class="border border-fg-muted text-fg px-22 py-13 hover:border-fg">back to run</button>
+            <button type="button" x-show="!setupOpen" x-cloak @click="setupOpen = true"
+                    class="border border-fg-muted text-fg px-22 py-13 hover:border-fg">open setup</button>
+        </div>
+    </div>
 </div>
-{# running #}
+
+{# running. Elapsed time and step count live in the topbar. #}
 <div x-show="view === 'running'" x-cloak class="flex flex-col gap-33">
 
-    <div class="sr-only" aria-live="polite" x-text="run.status === 'running' ? ('step ' + run.done + ' of ' + run.total) : ''"></div>
+    {# Overall progress for assistive tech; the segments are the visual. #}
+    <div role="progressbar" aria-label="evaluation progress" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100"
+         :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="sr-only"></div>
 
-    <div class="flex flex-col gap-15">
-        <div class="flex justify-between items-center">
-            <div class="flex items-center gap-8"
-                 :class="run.status === 'error' ? 'text-warn' : 'text-fg'">
-                <span x-show="run.status === 'running'" aria-hidden="true"
-                      class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
-                <span class="text-subheading"
-                      x-text="run.status === 'error' ? 'stopped' : 'running'"></span>
-            </div>
-            <div class="text-fg-muted flex items-center gap-15">
-                <span x-text="'elapsed ' + fmtClock(elapsed)"></span>
-                <span x-text="run.done + ' / ' + run.total"></span>
-            </div>
-        </div>
-        <div role="progressbar" aria-label="evaluation progress" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100"
-             :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="h-4 bg-line">
-            <div class="h-4 bg-fg" :style="'width:' + pct + '%'"></div>
-        </div>
+    {# One segment per phase. Summary is a single call: half the width, no counter. #}
+    <div class="grid grid-cols-[2fr_2fr_2fr_1fr] gap-33">
+        <template x-for="p in phaseProgress" :key="p.phase">
+            <button type="button" @click="scrollToPhase(p.phase)"
+                    :aria-label="p.title + ': ' + p.finished + ' of ' + p.total + (p.errors ? ', ' + p.errors + ' errors' : '')"
+                    class="min-w-0 flex flex-col gap-8 text-left">
+                <span class="flex items-center justify-between gap-8">
+                    <span class="min-w-0 flex items-center gap-8" :class="stateClass(p.state)">
+                        {{ ui.activity_dot("p.state === 'running'") }}
+                        <span class="truncate" x-text="p.short"></span>
+                    </span>
+                    <span class="shrink-0 text-fg-muted tabular-nums">
+                        <span x-text="p.side"></span><span
+                              x-show="p.errors" class="text-warn" x-text="(p.side ? ' · ' : '') + p.errors + ' err'"></span>
+                    </span>
+                </span>
+                <span class="block h-4 bg-line">
+                    <span class="block h-4 bg-fg transition-[width] duration-200 ease-out motion-reduce:transition-none"
+                          :style="'width:' + p.pct + '%'"></span>
+                </span>
+            </button>
+        </template>
     </div>
 
-    <div x-show="run.status === 'error'" x-cloak role="alert"
-         class="border border-warn px-15 py-12 text-warn flex flex-col gap-12">
-        <span x-text="run.error"></span>
-        <button type="button" @click="dismissRun()"
-                class="self-start border border-warn px-15 py-9 hover:bg-line">back to setup</button>
-    </div>
+    {{ ui.warn_notice("run.status === 'error'", "run.error",
+                      action="dismissRun()", action_label="back to setup") }}
 
     <template x-for="g in phaseGroups" :key="g.phase">
-        <div class="flex flex-col">
-            <div class="pb-8 border-b border-line text-fg-muted" x-text="g.title"></div>
-            <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
-                {# status-row #}
-                <div>
-                    <div class="flex items-start gap-15 py-10 border-b border-line">
-                        <div class="w-72 shrink-0 flex items-center gap-8" :class="stateClass(s.state)">
-                            <span x-show="s.state === 'running'" aria-hidden="true"
-                                  class="size-8 bg-link animate-breathe motion-reduce:animate-none"></span>
-                            <span x-text="s.state"></span>
-                        </div>
-                        <div class="flex-1 min-w-0 break-words"
-                             :class="(s.state === 'queued' || s.state === 'skipped') && 'text-fg-muted'"
-                             x-text="s.label" :title="s.model"></div>
-                        <div class="max-w-320 break-words text-fg-muted" x-text="rowMeta(s)"></div>
-                    </div>
-                    {# load notice #}
-                    <div class="pl-87 py-10 border-b border-line" x-show="showLoadNotice(s)" x-cloak aria-live="polite">
-                        <div class="bg-surface border border-line p-15 flex flex-col gap-8">
-                            <div class="flex items-center gap-8">
-                                <span class="size-8 bg-link animate-breathe motion-reduce:animate-none" aria-hidden="true"></span>
-                                the model may still be loading — this is normal
+        <div class="flex flex-col scroll-mt-33" :id="'phase-' + g.phase">
+            {# group header: a finished phase folds into this line #}
+            <div class="flex justify-between items-center gap-15 pb-8 border-b border-line text-fg-muted">
+                <span x-text="g.title"></span>
+                <span x-show="phaseOf(g.phase).state === 'done'" class="flex items-center gap-15">
+                    <span>
+                        <span x-text="phaseOf(g.phase).side"></span><span
+                              x-show="phaseOf(g.phase).errors" class="text-warn"
+                              x-text="(phaseOf(g.phase).side ? ' · ' : '') + phaseOf(g.phase).errors + ' err'"></span>
+                    </span>
+                    <button type="button" @click="togglePhase(g.phase)"
+                            :aria-expanded="!isCollapsed(g.phase)" :aria-controls="'rows-' + g.phase"
+                            class="hover:text-fg" x-text="isCollapsed(g.phase) ? 'show' : 'hide'"></button>
+                </span>
+            </div>
+
+            <div :id="'rows-' + g.phase" x-show="!isCollapsed(g.phase)">
+                <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
+                    <div>
+                        {{ ui.status_row("s.state", "s.label", "rowMeta(s)", title_expr="s.model") }}
+                        {# load notice: announced once through the page live region #}
+                        <div x-show="showLoadNotice(s)" x-cloak class="pl-87 py-10 border-b border-line">
+                            <div class="bg-surface border border-line p-15 flex flex-col gap-8">
+                                <div class="flex items-center gap-8">
+                                    {{ ui.activity_dot() }}
+                                    the model may still be loading — this is normal
+                                </div>
+                                <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
                             </div>
-                            <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
                         </div>
                     </div>
-                </div>
-            </template>
+                </template>
+            </div>
         </div>
     </template>
 </div>
-{# results, per model #}
+
+{# results #}
 <div x-show="view === 'results'" x-cloak class="flex flex-col gap-33">
-    <div x-show="resultsError" role="alert"
-         class="border border-warn px-15 py-12 text-warn" x-text="resultsError"></div>
+    {{ ui.warn_notice("resultsError", "resultsError") }}
     <div x-show="!resultsError && !report" class="text-fg-muted">loading…</div>
 
     <template x-if="report">
         <div class="flex flex-col gap-33">
 
             <div class="flex flex-col gap-8">
-                <div class="text-heading" x-text="runTitle"></div>
+                <div class="text-heading break-words" x-text="runTitle"></div>
                 <div class="text-fg-muted break-words" x-text="report.meta"></div>
             </div>
 
-            {# summary #}
-            <section class="flex flex-col gap-15">
-                <div class="pb-8 border-b border-line text-fg-muted">01 summary</div>
-                <div class="flex flex-col gap-8">
+            {# 01 summary: verdict -> key figures -> notes -> judge text #}
+            <section class="flex flex-col">
+                {{ ui.section_label("01 summary") }}
+
+                <div class="py-22 flex flex-col gap-8">
                     <div class="text-fg-muted" x-text="report.verdict.label"></div>
                     <div x-show="report.verdict.model" class="text-heading break-words"
                          x-text="report.verdict.short" :title="report.verdict.model"></div>
                     <div class="text-fg-muted" x-text="report.verdict.rule"></div>
                 </div>
-                <template x-for="(n, ni) in report.notes" :key="ni">
-                    <div class="text-fg-muted" x-text="n"></div>
-                </template>
 
-                <div class="flex flex-col gap-12 max-w-720">
-                    <template x-for="(b, bi) in report.summaryBlocks" :key="bi">
-                        <div>
-                            <template x-if="b.type === 'heading'">
-                                <div class="text-subheading text-fg">
-                                    <template x-for="(p, pi) in b.inlines" :key="pi"><span x-text="p.text"></span></template>
-                                </div>
-                            </template>
-                            <template x-if="b.type === 'paragraph'">
-                                <p class="text-fg-muted">
-                                    <template x-for="(p, pi) in b.inlines" :key="pi"><span :class="p.bold && 'text-fg'" x-text="p.text"></span></template>
-                                </p>
-                            </template>
-                            <template x-if="b.type === 'list'">
-                                <ul class="flex flex-col gap-6">
-                                    <template x-for="(item, ii) in b.items" :key="ii">
-                                        <li class="flex gap-8 text-fg-muted">
-                                            <span aria-hidden="true">–</span>
-                                            <span class="min-w-0">
-                                                <template x-for="(p, pi) in item" :key="pi"><span :class="p.bold && 'text-fg'" x-text="p.text"></span></template>
-                                            </span>
-                                        </li>
-                                    </template>
-                                </ul>
-                            </template>
+                {# key figures of the recommended model, hairline columns, no fills #}
+                <div x-show="report.verdict.figures.length" class="grid grid-cols-4 border-y border-line">
+                    <template x-for="(f, fi) in report.verdict.figures" :key="f.label">
+                        <div class="min-w-0 py-15 flex flex-col gap-4"
+                             :class="fi === 0 ? 'pr-22' : 'px-22 border-l border-line'">
+                            <span class="text-fg-muted" x-text="f.label"></span>
+                            <span class="flex items-baseline gap-6">
+                                <span class="text-display font-thin tabular-nums" x-text="f.value"></span>
+                                <span class="text-fg-muted" x-text="f.unit"></span>
+                            </span>
+                            <span class="text-fg-muted break-words" x-text="f.caption"></span>
                         </div>
                     </template>
                 </div>
-            </section>
 
-            {# comparison matrix #}
-            <section class="flex flex-col gap-15">
-                <div class="pb-8 border-b border-line text-fg-muted">02 comparison</div>
-                <div class="overflow-x-auto">
-                    <div class="min-w-max">
-                        <div class="grid items-center gap-x-15 py-12 border-b border-line text-fg-muted" :style="report.grid">
-                            <div class="sticky left-0 bg-bg">model</div>
-                            <div>median</div>
-                            <div>pass</div>
-                            <template x-for="h in report.questionHeads" :key="h.id">
-                                <div x-text="h.id" :title="h.title"></div>
-                            </template>
-                            <div>t/s</div>
-                            <div>time, s</div>
-                        </div>
-                        <template x-for="m in report.models" :key="m.model">
-                            <div class="grid items-center gap-x-15 py-12 border-b border-line" :style="report.grid">
-                                <div class="sticky left-0 bg-bg pr-15 break-words" x-text="m.short" :title="m.model"></div>
-                                <div class="text-heading-sm" x-text="m.median"></div>
-                                <div x-text="m.passRate"></div>
-                                <template x-for="(c, ci) in m.cells" :key="ci">
-                                    <div :class="c.warn ? 'text-warn' : (c.muted ? 'text-fg-muted' : 'text-fg')"
-                                         x-text="c.text" :title="c.title"></div>
-                                </template>
-                                <div class="text-fg-muted" x-text="m.tps"></div>
-                                <div class="text-fg-muted" x-text="m.time"></div>
-                            </div>
+                {# label column = eval block score column (120px, gap 33) #}
+                <div x-show="report.notes.length" class="grid grid-cols-[120px_1fr] gap-x-33 py-15 border-b border-line">
+                    <div class="text-fg-muted">notes</div>
+                    <div class="min-w-0 flex flex-col gap-6">
+                        <template x-for="(n, ni) in report.notes" :key="ni">
+                            <div x-text="n"></div>
                         </template>
                     </div>
                 </div>
-                <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, not in the median</div>
+
+                <div x-show="report.summaryBlocks.length" class="grid grid-cols-[120px_1fr] gap-x-33 py-15 border-b border-line">
+                    <div class="text-fg-muted">judge</div>
+                    <div class="min-w-0 max-w-720">{{ ui.md("report.summaryBlocks") }}</div>
+                </div>
             </section>
 
-            {# view: per model / per question #}
+            {# 02 comparison: table / chart #}
+            <section class="flex flex-col gap-15">
+                <div class="flex justify-between items-center pb-8 border-b border-line">
+                    <div class="text-fg-muted">02 comparison</div>
+                    {{ ui.tabs("comparisonView", [("table", "table"), ("chart", "chart")], "comparison view") }}
+                </div>
+
+                <div id="panel-comparisonView" role="tabpanel"
+                     :aria-labelledby="'tab-comparisonView-' + comparisonView">
+
+                    {# table #}
+                    <div x-show="comparisonView === 'table'" class="flex flex-col gap-15">
+                        <div class="overflow-x-auto">
+                            <div class="min-w-max">
+                                <div class="grid items-center gap-x-15 py-12 border-b border-line text-fg-muted" :style="report.grid">
+                                    <div class="sticky left-0 bg-bg">model</div>
+                                    <div>median</div>
+                                    <div>pass</div>
+                                    <template x-for="h in report.questionHeads" :key="h.id">
+                                        <div x-text="h.id" :title="h.title"></div>
+                                    </template>
+                                    <div>t/s</div>
+                                    <div>time, s</div>
+                                </div>
+                                <template x-for="m in report.models" :key="m.model">
+                                    <div class="grid items-center gap-x-15 py-12 border-b border-line tabular-nums" :style="report.grid">
+                                        <div class="sticky left-0 bg-bg pr-15 break-words normal-nums" x-text="m.short" :title="m.model"></div>
+                                        <div class="text-heading-sm" x-text="m.median"></div>
+                                        <div x-text="m.passRate"></div>
+                                        <template x-for="(c, ci) in m.cells" :key="ci">
+                                            <div class="flex flex-col gap-4" :title="c.title">
+                                                <span :class="c.warn ? 'text-warn' : (c.muted ? 'text-fg-muted' : 'text-fg')"
+                                                      x-text="c.text"></span>
+                                                <span class="block h-2 bg-line" aria-hidden="true">
+                                                    <span x-show="c.bar != null" class="block h-2"
+                                                          :class="c.muted ? 'bg-fg-muted' : 'bg-fg'"
+                                                          :style="'width:' + c.bar + '%'"></span>
+                                                </span>
+                                            </div>
+                                        </template>
+                                        <div class="text-fg-muted" x-text="m.tps"></div>
+                                        <div class="text-fg-muted" x-text="m.time"></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, excluded from the scores</div>
+                    </div>
+
+                    {# chart: median score (y) against median t/s (x) #}
+                    <div x-show="comparisonView === 'chart'" class="flex flex-col gap-15">
+                        <template x-if="report.chart.points.length">
+                            <div class="flex flex-col gap-15">
+                                {# gutters: y ticks + title left, half an x tick right, x ticks + title below.
+                                   Median labels sit inside the plot: nothing may stick out to the right. #}
+                                <div class="pt-22 pr-22 pb-55 pl-44">
+                                    <div class="relative h-320 border-l border-b border-line"
+                                         role="img" :aria-label="report.chart.label">
+
+                                        {# above both medians: the most attractive quadrant #}
+                                        <div class="absolute top-0 right-0 bg-surface"
+                                             :style="'left:' + report.chart.mid.left + '%;bottom:' + report.chart.mid.bottom + '%'"></div>
+                                        <div class="absolute inset-y-0 border-l border-dashed border-line"
+                                             :style="'left:' + report.chart.mid.left + '%'"></div>
+                                        <div class="absolute inset-x-0 border-t border-dashed border-line"
+                                             :style="'bottom:' + report.chart.mid.bottom + '%'"></div>
+                                        {# t/s median: top of its line, right of it (left near the right edge) #}
+                                        <span class="absolute top-8 whitespace-nowrap text-fg-muted"
+                                              :class="report.chart.mid.flipX ? 'pr-8' : 'pl-8'"
+                                              :style="report.chart.mid.flipX
+                                                  ? 'right:' + (100 - report.chart.mid.left) + '%'
+                                                  : 'left:' + report.chart.mid.left + '%'"
+                                              x-text="report.chart.mid.tpsText"></span>
+                                        {# score median: right end of its line, above it (below near the top) #}
+                                        <span class="absolute right-8 whitespace-nowrap text-fg-muted"
+                                              :class="report.chart.mid.flipY ? 'pt-4' : '-translate-y-full pb-4'"
+                                              :style="'top:' + (100 - report.chart.mid.bottom) + '%'"
+                                              x-text="report.chart.mid.scoreText"></span>
+
+                                        {# axes #}
+                                        <span class="absolute bottom-full right-full pr-8 pb-8 text-fg-muted">score</span>
+                                        <template x-for="t in report.chart.yTicks" :key="t.text">
+                                            <span class="absolute right-full pr-8 -translate-y-1/2 text-fg-muted"
+                                                  :style="'top:' + t.pos + '%'" x-text="t.text"></span>
+                                        </template>
+                                        <template x-for="t in report.chart.xTicks" :key="t.text">
+                                            <span class="absolute top-full pt-8 -translate-x-1/2 text-fg-muted"
+                                                  :style="'left:' + t.pos + '%'" x-text="t.text"></span>
+                                        </template>
+                                        <span class="absolute top-full right-0 pt-33 text-fg-muted">t/s</span>
+
+                                        {# pareto line: the only SVG, scaled with the box #}
+                                        <svg x-show="report.chart.pareto" aria-hidden="true"
+                                             class="absolute inset-0 size-full overflow-visible pointer-events-none"
+                                             viewBox="0 0 100 100" preserveAspectRatio="none">
+                                            <polyline :points="report.chart.pareto" fill="none" class="stroke-fg-muted"
+                                                      stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"></polyline>
+                                        </svg>
+
+                                        {# points: square, filled = recommended #}
+                                        <template x-for="p in report.chart.points" :key="p.model">
+                                            <div class="absolute" :style="'left:' + p.left + '%;top:' + p.top + '%'" :title="p.title">
+                                                <span class="absolute size-8 -translate-x-1/2 -translate-y-1/2"
+                                                      :class="p.best ? 'bg-fg' : 'bg-bg border border-fg'"></span>
+                                                <span class="absolute -translate-y-1/2 whitespace-nowrap"
+                                                      :class="[p.flip ? 'right-8' : 'left-8', (p.leading || p.best) ? 'text-fg' : 'text-fg-muted']"
+                                                      x-text="p.short"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap gap-x-22 gap-y-8 text-fg-muted">
+                                    <span class="flex items-center gap-8"><span class="size-8 bg-fg"></span>recommended</span>
+                                    <span class="flex items-center gap-8"><span class="size-8 border border-fg"></span>model (median per run)</span>
+                                    <span class="flex items-center gap-8"><span class="size-8 bg-surface border border-line"></span>faster and better than the median</span>
+                                    <span class="flex items-center gap-8"><span class="w-15 border-t border-dashed border-fg-muted"></span>pareto: no model is both faster and better</span>
+                                </div>
+                            </div>
+                        </template>
+                        <div x-show="!report.chart.points.length" class="text-fg-muted">no model has both a median score and t/s.</div>
+                        <div x-show="report.chart.missing.length" class="text-fg-muted"
+                             x-text="'not plotted (no median score or t/s): ' + report.chart.missing.join(', ')"></div>
+                    </div>
+                </div>
+            </section>
+
+            {# 03 view: per model / per question #}
             <section class="flex flex-col gap-22">
                 <div class="flex justify-between items-center pb-8 border-b border-line">
                     <div class="text-fg-muted">03 view</div>
-                    {# view-tab #}
-                    <div class="flex" role="tablist" aria-label="results view"
-                         @keydown.arrow-right.prevent="switchTab('question')"
-                         @keydown.arrow-left.prevent="switchTab('model')"
-                         @keydown.home.prevent="switchTab('model')"
-                         @keydown.end.prevent="switchTab('question')">
-                        <button type="button" role="tab" id="tab-model"
-                                :aria-selected="resultsView === 'model'" :tabindex="resultsView === 'model' ? 0 : -1" aria-controls="results-panel"
-                                @click="resultsView = 'model'"
-                                class="px-15 py-9 border"
-                                :class="resultsView === 'model' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted hover:text-fg'">per model</button>
-                        <button type="button" role="tab" id="tab-question"
-                                :aria-selected="resultsView === 'question'" :tabindex="resultsView === 'question' ? 0 : -1" aria-controls="results-panel"
-                                @click="resultsView = 'question'"
-                                class="px-15 py-9 border"
-                                :class="resultsView === 'question' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted hover:text-fg'">per question</button>
-                    </div>
+                    {{ ui.tabs("resultsView", [("model", "per model"), ("question", "per question")], "results view") }}
                 </div>
 
-                <div id="results-panel" role="tabpanel"
-                     :aria-labelledby="resultsView === 'model' ? 'tab-model' : 'tab-question'"
+                <div id="panel-resultsView" role="tabpanel"
+                     :aria-labelledby="'tab-resultsView-' + resultsView"
                      class="flex flex-col gap-22">
 
                     {# per model #}
                     <template x-if="resultsView === 'model'">
                         <div class="flex flex-col gap-22">
                             <template x-for="m in report.models" :key="m.model">
-                                {# card #}
                                 <article class="border border-line p-22">
-                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
-                                        <div class="text-subheading min-w-0 break-words" x-text="m.short" :title="m.model"></div>
-                                        <div class="text-fg-muted" x-text="m.metricsLine"></div>
+                                    {{ ui.card_head("m.short", "m.metricsLine", title_tip="m.model") }}
+
+                                    {# answers by category #}
+                                    <div x-show="m.distribution.n" class="py-15 border-b border-line flex flex-col gap-8">
+                                        <div class="text-fg-muted" x-text="'answers by category · n=' + m.distribution.n"></div>
+                                        <template x-for="d in m.distribution.rows" :key="d.label">
+                                            <div class="grid grid-cols-[180px_1fr_80px] items-center gap-x-15">
+                                                <span class="break-words"
+                                                      :class="d.warn ? 'text-warn' : (d.count ? 'text-fg' : 'text-fg-muted')"
+                                                      x-text="d.label"></span>
+                                                <span class="block h-4 bg-line" aria-hidden="true">
+                                                    <span class="block h-4" :class="d.warn ? 'bg-warn' : 'bg-fg'"
+                                                          :style="'width:' + d.pct + '%'"></span>
+                                                </span>
+                                                <span class="text-fg-muted" x-text="d.text"></span>
+                                            </div>
+                                        </template>
                                     </div>
+
                                     <template x-for="e in m.entries" :key="e.qid">
-                                        {# eval block #}
-                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
-                                            <div class="w-120 shrink-0">
-                                                <div class="text-fg-muted" x-text="e.label"></div>
-                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
-                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
-                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
-                                            </div>
-                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
-                                                <div class="text-fg-muted" x-text="e.question"></div>
-                                                <template x-for="(n, ni) in e.notes" :key="ni">
-                                                    <div class="text-fg-muted" x-text="n"></div>
-                                                </template>
-                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
-                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
-                                            </div>
-                                        </div>
+                                        {{ ui.eval_block("e.label", "e.question") }}
                                     </template>
                                 </article>
                             </template>
@@ -365,31 +423,28 @@
                     <template x-if="resultsView === 'question'">
                         <div class="flex flex-col gap-22">
                             <template x-for="q in report.questionCards" :key="q.id">
-                                {# card #}
                                 <article class="border border-line p-22">
-                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
-                                        <div class="text-subheading min-w-0 break-words" x-text="q.label"></div>
-                                        <div class="text-fg-muted" x-text="q.metricsLine"></div>
-                                    </div>
+                                    {{ ui.card_head("q.label", "q.metricsLine") }}
                                     <div class="py-15 border-b border-line text-fg-muted" x-text="q.question"></div>
-                                    <template x-for="e in q.entries" :key="e.model">
-                                        {# eval block #}
-                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
-                                            <div class="w-120 shrink-0">
-                                                <div class="text-fg-muted break-words" x-text="e.short" :title="e.model"></div>
-                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
-                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
-                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
-                                            </div>
-                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
-                                                <div class="text-fg-muted" x-text="e.rankText"></div>
-                                                <template x-for="(n, ni) in e.notes" :key="ni">
-                                                    <div class="text-fg-muted" x-text="n"></div>
-                                                </template>
-                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
-                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
-                                            </div>
+                                    {# score scale: one tick per score, a tall tick = several models #}
+                                    <div x-show="q.marks.length" class="py-15 border-b border-line flex flex-col gap-8">
+                                        <div class="relative h-15" aria-hidden="true">
+                                            <span class="absolute inset-x-0 top-1/2 h-px bg-line"></span>
+                                            <template x-for="mk in q.marks" :key="mk.score">
+                                                <span class="absolute inset-y-0 w-9 -translate-x-1/2 flex items-center justify-center"
+                                                      :style="'left:' + mk.score + '%'" :title="mk.title">
+                                                    <span class="w-px bg-fg" :class="mk.many ? 'h-15' : 'h-9'"></span>
+                                                </span>
+                                            </template>
                                         </div>
+                                        <div class="flex justify-between gap-15 text-fg-muted">
+                                            <span>0</span>
+                                            <span x-text="q.spread"></span>
+                                            <span>100</span>
+                                        </div>
+                                    </div>
+                                    <template x-for="e in q.entries" :key="e.model">
+                                        {{ ui.eval_block("e.short", "e.rankText", head_title="e.model") }}
                                     </template>
                                 </article>
                             </template>
@@ -398,9 +453,9 @@
                 </div>
             </section>
 
-            {# references #}
+            {# 04 reference answers #}
             <section class="flex flex-col">
-                <div class="pb-8 border-b border-line text-fg-muted">04 reference answers</div>
+                {{ ui.section_label("04 reference answers") }}
                 <template x-for="r in report.references" :key="r.id">
                     <details class="group border-b border-line">
                         <summary class="py-12 flex gap-12 text-fg-muted hover:text-fg">
@@ -410,7 +465,8 @@
                         </summary>
                         <div class="pb-15 flex flex-col gap-12">
                             <div class="text-fg-muted" x-text="r.question"></div>
-                            <pre class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="r.text"></pre>
+                            {{ ui.answer_box("r.blocks", "r.text", show="r.text") }}
+                            <div x-show="!r.text" class="text-fg-muted">no reference answer.</div>
                         </div>
                     </details>
                 </template>
@@ -423,14 +479,10 @@
 
 {% block archive %}
 <div class="flex flex-col">
-    <div class="pb-8 border-b border-line text-fg-muted">archive</div>
+    {{ ui.section_label("archive") }}
 
-    <div x-show="historyError" x-cloak role="alert"
-         class="mt-15 border border-warn px-15 py-12 text-warn flex flex-col gap-8">
-        <span x-text="historyError"></span>
-        <button type="button" @click="loadHistory()"
-                class="self-start border border-warn px-15 py-9 hover:bg-line">reload</button>
-    </div>
+    {{ ui.warn_notice("historyError", "historyError",
+                      action="loadHistory()", action_label="reload", extra="mt-15") }}
 
     <div x-show="historyLoaded && !historyError && history.length === 0" x-cloak
          class="py-15 text-fg-muted">no runs yet. finished evaluations appear here.</div>
@@ -448,7 +500,7 @@
             <span class="mt-8 block text-fg-muted">
                 <span class="block" x-text="r.timestamp"></span>
                 <span class="block" x-text="r.models_tested + ' models · ' + r.questions_count + ' qs'"></span>
-                <span class="block break-words" x-text="'judge: ' + r.judge_model"></span>
+                <span class="block break-words" x-text="'judge: ' + (r.judge_model || '–')"></span>
             </span>
         </button>
     </template>

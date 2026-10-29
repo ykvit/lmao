@@ -1,0 +1,236 @@
+{# UI components. One macro = one Figma component (see DESIGN.md).
+
+   Import:  {% import "_components.html" as ui %}
+
+   Arguments named `show`, `model`, `*_expr`, `state`, `label`, `meta`, `text`
+   (in warn_notice / code_box) are Alpine expressions. Jinja escapes them, the
+   browser decodes the entities back, so quotes and && are safe here.
+   Static strings (`text` in section_label / checkbox_row, `label` in field)
+   are rendered as plain text. #}
+
+{# activity-dot (33:221). Square, link colour, breathes. #}
+{% macro activity_dot(show="") -%}
+<span{% if show %} x-show="{{ show }}"{% endif %} aria-hidden="true"
+      class="inline-block size-8 shrink-0 bg-link animate-breathe motion-reduce:animate-none"></span>
+{%- endmacro %}
+
+{# Section label: hairline under a muted caption. #}
+{% macro section_label(text="", text_expr="", id="") -%}
+<div{% if id %} id="{{ id }}"{% endif %} class="pb-8 border-b border-line text-fg-muted"{% if text_expr %} x-text="{{ text_expr }}"{% endif %}>{{ text }}</div>
+{%- endmacro %}
+
+{# Markdown inline parts: { text, bold, code }. Bold is fg colour (only 100/300 are loaded). #}
+{% macro md_inline(parts) -%}
+<template x-for="(p, pi) in {{ parts }}" :key="pi"><span
+          :class="p.code ? 'font-mono text-fg bg-bg px-4' : (p.bold && 'text-fg')" x-text="p.text"></span></template>
+{%- endmacro %}
+
+{# Markdown blocks from parseMarkdown(). Everything goes through x-text:
+   HTML in a model answer is shown as text, never executed. #}
+{% macro md(blocks) -%}
+<div class="min-w-0 flex flex-col gap-12">
+    <template x-for="(b, bi) in {{ blocks }}" :key="bi">
+        <div class="min-w-0">
+            <template x-if="b.type === 'heading'">
+                <div class="text-fg break-words" :class="b.level <= 2 && 'text-subheading'">{{ md_inline("b.inlines") }}</div>
+            </template>
+            <template x-if="b.type === 'paragraph'">
+                <p class="text-fg-muted break-words">{{ md_inline("b.inlines") }}</p>
+            </template>
+            <template x-if="b.type === 'list'">
+                <ul class="flex flex-col gap-6">
+                    <template x-for="(item, ii) in b.items" :key="ii">
+                        <li class="flex gap-8 text-fg-muted">
+                            <span aria-hidden="true" class="shrink-0" :class="b.ordered && 'text-fg'"
+                                  x-text="b.ordered ? (b.start + ii) + '.' : '–'"></span>
+                            <span class="min-w-0 break-words">{{ md_inline("item") }}</span>
+                        </li>
+                    </template>
+                </ul>
+            </template>
+            <template x-if="b.type === 'code'">
+                <div class="flex flex-col">
+                    <div x-show="b.lang" class="self-start px-12 py-4 border border-b-0 border-line font-mono text-fg-muted" x-text="b.lang"></div>
+                    <pre class="bg-bg border border-line p-12 font-mono text-caption font-light text-fg whitespace-pre overflow-x-auto" x-text="b.text"></pre>
+                </div>
+            </template>
+            <template x-if="b.type === 'table'">
+                <div class="overflow-x-auto">
+                    <table class="border-collapse text-left">
+                        <thead>
+                            <tr>
+                                <template x-for="(cell, hi) in b.head" :key="hi">
+                                    <th class="px-12 py-6 border border-line font-light text-fg align-top">{{ md_inline("cell") }}</th>
+                                </template>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(row, ri) in b.rows" :key="ri">
+                                <tr>
+                                    <template x-for="(cell, ci) in row" :key="ci">
+                                        <td class="px-12 py-6 border border-line text-fg-muted align-top">{{ md_inline("cell") }}</td>
+                                    </template>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </template>
+            <template x-if="b.type === 'rule'">
+                <div class="border-t border-line"></div>
+            </template>
+        </div>
+    </template>
+</div>
+{%- endmacro %}
+
+{# Answer box: rendered markdown, `raw` shows the source, `copy` copies the source.
+   `copy` only in a secure context (localhost / https). #}
+{% macro answer_box(blocks, raw, show="") -%}
+<div{% if show %} x-show="{{ show }}"{% endif %} x-data="{ asText: false, copied: false }"
+     class="bg-surface border border-line">
+    <div class="flex justify-end gap-15 px-15 pt-8">
+        <button type="button" @click="asText = !asText" :aria-pressed="asText"
+                class="hover:text-fg" :class="asText ? 'text-fg' : 'text-fg-muted'">raw</button>
+        <button type="button" x-show="canCopy"
+                @click="copyText({{ raw }}).then((ok) => { copied = ok; setTimeout(() => (copied = false), 1500); })"
+                class="text-fg-muted hover:text-fg" x-text="copied ? 'copied' : 'copy'"></button>
+    </div>
+    <div class="px-15 pb-15 pt-8">
+        <div x-show="!asText">{{ md(blocks) }}</div>
+        <template x-if="asText">
+            <pre class="font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="{{ raw }}"></pre>
+        </template>
+    </div>
+</div>
+{%- endmacro %}
+
+{# Warn notice: errors only. Optional action button. #}
+{% macro warn_notice(show, text, action="", action_label="", extra="") -%}
+<div x-show="{{ show }}" x-cloak role="alert"
+     class="border border-warn px-15 py-12 text-warn flex flex-col gap-12 {{ extra }}">
+    <span class="break-words" x-text="{{ text }}"></span>
+    {%- if action %}
+    <button type="button" @click="{{ action }}"
+            class="self-start border border-warn px-15 py-9 hover:bg-line">{{ action_label }}</button>
+    {%- endif %}
+</div>
+{%- endmacro %}
+
+{# field/input (4:6), textarea variant when rows > 0. #}
+{% macro field(label, model, rows=0, placeholder="") -%}
+<label class="flex flex-col gap-8">
+    <span class="text-fg-muted">{{ label }}</span>
+    {%- if rows %}
+    <textarea x-model="{{ model }}" rows="{{ rows }}"{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+              class="w-full resize-y bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none"></textarea>
+    {%- else %}
+    <input type="text" x-model="{{ model }}"{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+           class="w-full bg-bg border border-line px-12 py-10 text-fg placeholder:text-fg-muted focus:border-fg outline-none">
+    {%- endif %}
+</label>
+{%- endmacro %}
+
+{# checkbox-row (4:24). The label is the group: `has-checked` colours the
+   text, `group-has-checked` the box. No peer, so nesting does not matter. #}
+{% macro checkbox_row(model, value="", text="", text_expr="", title_expr="", hint="") -%}
+<label class="group flex items-start gap-12 py-11 border-b border-line cursor-pointer text-fg-muted has-checked:text-fg">
+    <input type="checkbox" x-model="{{ model }}"{% if value %} :value="{{ value }}"{% endif %} class="sr-only">
+    <span aria-hidden="true"
+          class="mt-3 size-14 shrink-0 flex items-center justify-center border border-fg-muted group-has-checked:bg-fg group-has-checked:border-fg group-has-focus-visible:outline-1 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-fg">
+        <svg class="hidden group-has-checked:block text-bg" width="10" height="10" viewBox="0 0 10 10"
+             fill="none" stroke="currentColor">
+            <path d="M1.5 5.5l2.5 2.5 4.5-5.5"/>
+        </svg>
+    </span>
+    <span class="min-w-0 flex flex-col">
+        <span class="break-words"{% if text_expr %} x-text="{{ text_expr }}"{% endif %}{% if title_expr %} :title="{{ title_expr }}"{% endif %}>{{ text }}</span>
+        {%- if hint %}
+        <span class="text-fg-muted">{{ hint }}</span>
+        {%- endif %}
+    </span>
+</label>
+{%- endmacro %}
+
+{# status-row (4:68): state | label | meta. Used on the running screen and the first screen. #}
+{% macro status_row(state, label, meta, title_expr="") -%}
+<div class="flex items-start gap-15 py-10 border-b border-line">
+    <div class="w-72 shrink-0 flex items-center gap-8" :class="stateClass({{ state }})">
+        {{ activity_dot(state ~ " === 'running'") }}
+        <span x-text="{{ state }}"></span>
+    </div>
+    <div class="flex-1 min-w-0 break-words" :class="isMuted({{ state }}) && 'text-fg-muted'"
+         x-text="{{ label }}"{% if title_expr %} :title="{{ title_expr }}"{% endif %}></div>
+    <div class="max-w-320 break-words text-fg-muted tabular-nums" x-text="{{ meta }}"></div>
+</div>
+{%- endmacro %}
+
+{# Card header: title left, metrics right. #}
+{% macro card_head(title, metrics, title_tip="") -%}
+<div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
+    <div class="text-subheading min-w-0 break-words" x-text="{{ title }}"{% if title_tip %} :title="{{ title_tip }}"{% endif %}></div>
+    <div class="text-fg-muted" x-text="{{ metrics }}"></div>
+</div>
+{%- endmacro %}
+
+{# Eval block. Expects the entry as `e` in scope (x-for="e in ..."). #}
+{% macro eval_block(head, first, head_title="") -%}
+<div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+    <div class="w-120 shrink-0">
+        <div class="text-fg-muted break-words" x-text="{{ head }}"{% if head_title %} :title="{{ head_title }}"{% endif %}></div>
+        <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
+        <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
+        <div x-show="e.category" class="text-fg-muted" x-text="e.category"></div>
+    </div>
+    <div class="flex-1 min-w-0 flex flex-col gap-12">
+        <div class="text-fg-muted" x-text="{{ first }}"></div>
+        <template x-for="(n, ni) in e.notes" :key="ni">
+            <div class="text-fg-muted" x-text="n"></div>
+        </template>
+        <div class="break-words" :class="e.error && 'text-warn'" x-text="e.comment"></div>
+        {{ answer_box("e.answerBlocks", "e.answer", show="e.answer") }}
+    </div>
+</div>
+{%- endmacro %}
+
+{# nav-toggle (4:51). Label beside the icon, mirrored on the right side,
+   so both toggles have the same height and centre line. #}
+{% macro nav_toggle(flag, controls, label, side="left", key="") -%}
+<button type="button" @click="{{ flag }} = !{{ flag }}"
+        :aria-expanded="{{ flag }}" aria-controls="{{ controls }}"
+        {%- if key %} aria-keyshortcuts="{{ key }}" title="{{ label }} ({{ key }})"{% endif %}
+        class="flex items-center gap-8 hover:text-fg"
+        :class="{{ flag }} ? 'text-fg' : 'text-fg-muted'">
+    {%- if side == "right" %}
+    <span>{{ label }}</span>
+    {%- endif %}
+    <span class="relative block size-20 shrink-0 border border-fg" aria-hidden="true">
+        <span class="absolute -top-px -bottom-px bg-fg transition-all duration-200 ease-out motion-reduce:transition-none"
+              :class="{{ flag }} ? '-{{ side }}-px w-7' : '{{ side }}-6 w-px'"></span>
+    </span>
+    {%- if side == "left" %}
+    <span>{{ label }}</span>
+    {%- endif %}
+</button>
+{%- endmacro %}
+
+
+{# view-tab (33:228) as a tablist. `state` is the Alpine property,
+   `items` a list of (value, text). Arrows cycle, Home/End jump.
+   Panel id: panel-<state>, tab ids: tab-<state>-<value>. #}
+{% macro tabs(state, items, label) -%}
+{%- set values = items|map("first")|join(",") %}
+<div class="flex" role="tablist" aria-label="{{ label }}"
+     @keydown.arrow-right.prevent="cycleTab('{{ state }}', '{{ values }}', 1)"
+     @keydown.arrow-left.prevent="cycleTab('{{ state }}', '{{ values }}', -1)"
+     @keydown.home.prevent="setTab('{{ state }}', '{{ items[0][0] }}')"
+     @keydown.end.prevent="setTab('{{ state }}', '{{ items[-1][0] }}')">
+    {%- for value, text in items %}
+    <button type="button" role="tab" id="tab-{{ state }}-{{ value }}"
+            :aria-selected="{{ state }} === '{{ value }}'" :tabindex="{{ state }} === '{{ value }}' ? 0 : -1"
+            aria-controls="panel-{{ state }}" @click="{{ state }} = '{{ value }}'"
+            class="px-15 py-9 border"
+            :class="{{ state }} === '{{ value }}' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted hover:text-fg'">{{ text }}</button>
+    {%- endfor %}
+</div>
+{%- endmacro %}

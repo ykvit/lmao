@@ -7,6 +7,41 @@ function shortName(name) {
     return name.replace(/^hf\.co\//, "").replace(/-GGUF:[^:\s]+$/i, "");
 }
 
+// 'x-GGUF:Q4_K_M' -> 'Q4_K_M', 'llama3:8b' -> '8b', 'llama3' -> 'latest'
+function variantOf(name) {
+    const quant = /-GGUF:([^:\s]+)$/i.exec(name);
+    if (quant) return quant[1];
+    const tag = /:([^:/\s]+)$/.exec(name);
+    return tag ? tag[1] : "latest";
+}
+
+// Display names for a set of models: { fullName: displayName }.
+// Names whose short form collides get the quantisation as a suffix
+// ('foo · Q4_K_M' / 'foo · Q8_0'); if that is still ambiguous, the full name.
+function shortNames(names) {
+    const unique = [...new Set((names || []).filter((n) => typeof n === "string" && n))];
+    const groups = new Map();
+    unique.forEach((name) => {
+        const short = shortName(name);
+        if (!groups.has(short)) groups.set(short, []);
+        groups.get(short).push(name);
+    });
+
+    const out = {};
+    groups.forEach((group, short) => {
+        if (group.length === 1) {
+            out[group[0]] = short;
+            return;
+        }
+        const variants = group.map(variantOf);
+        const distinct = new Set(variants).size === group.length;
+        group.forEach((name, i) => {
+            out[name] = distinct ? `${short} · ${variants[i]}` : name;
+        });
+    });
+    return out;
+}
+
 // 0 -> '01', 11 -> '12'
 function pad2(index) {
     return String(index + 1).padStart(2, "0");
@@ -26,7 +61,9 @@ function totalSteps(questionCount, candidateCount) {
 }
 
 // All rows of a run in the `queued` state, built from the request payload.
-function buildSteps(judge, candidates, questionCount) {
+// `names` is the map from shortNames(); missing names fall back to shortName().
+function buildSteps(judge, candidates, questionCount, names = {}) {
+    const display = (m) => names[m] || shortName(m);
     const ids = Array.from({ length: questionCount }, (_, i) => `q${i + 1}`);
     const unique = [...new Set(candidates)];
     const row = (phase, model, question, label) => ({
@@ -39,18 +76,20 @@ function buildSteps(judge, candidates, questionCount) {
         meta: "",
         startedAt: null, // client clock, for the live timer
         startTs: null, // server timestamp, for the final duration
+        endTs: null, // server timestamp, for the phase duration
         loading: false, // first call of a model load group: the load notice may apply
+        announced: false, // the load notice was already announced to screen readers
     });
 
     const steps = [];
     ids.forEach((q) => steps.push(row("reference", judge, q, `reference ${q}`)));
     unique.forEach((m) =>
-        ids.forEach((q) => steps.push(row("answer", m, q, `${shortName(m)} · ${q}`))),
+        ids.forEach((q) => steps.push(row("answer", m, q, `${display(m)} · ${q}`))),
     );
     // Local mode grades question by question.
     ids.forEach((q) =>
         unique.forEach((m) =>
-            steps.push(row("grading", m, q, `judge · ${shortName(m)} · ${q}`)),
+            steps.push(row("grading", m, q, `judge · ${display(m)} · ${q}`)),
         ),
     );
     steps.push(row("summary", judge, null, "final summary"));
@@ -65,8 +104,9 @@ function loadGroup(phase, model, cloud) {
     return phase === "reference" ? "judge-1" : "judge-2";
 }
 
+// Empty for missing, broken or negative durations (clock skew, lost start event).
 function fmtSeconds(sec) {
-    return typeof sec === "number" && isFinite(sec) ? `${sec.toFixed(1)} s` : "";
+    return typeof sec === "number" && isFinite(sec) && sec >= 0 ? `${sec.toFixed(1)} s` : "";
 }
 
 // 151 -> '02:31'
@@ -75,6 +115,12 @@ function fmtClock(sec) {
     const mm = String(Math.floor(total / 60)).padStart(2, "0");
     const ss = String(total % 60).padStart(2, "0");
     return `${mm}:${ss}`;
+}
+
+// Phase duration: '41.2 s' under a minute, '05:12' above.
+function fmtSpan(sec) {
+    if (typeof sec !== "number" || !isFinite(sec) || sec < 0) return "";
+    return sec < 60 ? `${sec.toFixed(1)} s` : fmtClock(sec);
 }
 
 // --- results --------------------------------------------------------------
@@ -92,32 +138,66 @@ const CATEGORY_LABELS = {
     broken_logic: "broken logic",
     garbage: "garbage",
 };
+// One wording for questions without a reference, everywhere in the UI.
+const NO_REFERENCE = "excluded from the scores";
+
+// A run file the UI cannot read: the message is shown to the user as is.
+class ReportFormatError extends Error {}
 
 function fmtNum(value) {
     return value === null || value === undefined ? "–" : String(value);
 }
 
-// 'Markdown' of the judge summary -> blocks. Nothing here touches the DOM:
-// the template renders the blocks with x-text, so no HTML is ever injected.
-// Supported: # headings, - lists, paragraphs, **bold**. Everything else stays text.
+// Score as a 0..100 number for bars and scales, or null.
+function clampScore(value) {
+    return typeof value === "number" && isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+}
+
+// Markdown -> blocks. Nothing here touches the DOM: the template renders the
+// blocks with x-text, so no HTML from a model is ever injected or executed.
+// Blocks: heading, paragraph, list (- * + and 1.), code (``` fences), table, rule.
+// Inline: **bold**, `code`. Everything else (links, italics, HTML) stays text.
 function parseInline(text) {
     const parts = [];
-    const re = /\*\*(.+?)\*\*/g;
+    const re = /`([^`]+)`|\*\*(.+?)\*\*/g;
     let last = 0;
     let match;
     while ((match = re.exec(text))) {
-        if (match.index > last) parts.push({ text: text.slice(last, match.index), bold: false });
-        parts.push({ text: match[1], bold: true });
+        if (match.index > last) parts.push({ text: text.slice(last, match.index), bold: false, code: false });
+        if (match[1] !== undefined) parts.push({ text: match[1], bold: false, code: true });
+        else parts.push({ text: match[2], bold: true, code: false });
         last = match.index + match[0].length;
     }
-    if (last < text.length) parts.push({ text: text.slice(last), bold: false });
+    if (last < text.length) parts.push({ text: text.slice(last), bold: false, code: false });
     return parts;
 }
 
-function parseMarkdown(text) {
+// Models often wrap the whole text in ```markdown ... ```. Unwrap it;
+// with `bareToo` also a fence without a language (the judge summary).
+function unwrapFence(text, bareToo) {
+    const match = /^\s*```([\w-]*)[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(text);
+    if (!match) return text;
+    const lang = match[1].toLowerCase();
+    return lang === "markdown" || lang === "md" || (bareToo && !lang) ? match[2] : text;
+}
+
+// '| a | b |' -> ['a', 'b']
+function tableCells(line) {
+    return line
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((cell) => parseInline(cell.trim()));
+}
+
+function parseMarkdown(text, options = {}) {
+    const source = unwrapFence(String(text || "").replace(/\r\n?/g, "\n"), options.bareFence);
     const blocks = [];
     let paragraph = [];
     let list = null;
+    let table = null;
+    let code = null;
 
     const flushParagraph = () => {
         if (paragraph.length) {
@@ -127,74 +207,141 @@ function parseMarkdown(text) {
     };
     const flushList = () => {
         if (list) {
-            blocks.push({ type: "list", items: list });
+            blocks.push({ type: "list", ...list });
             list = null;
         }
     };
+    const flushTable = () => {
+        if (table) {
+            // a header row needs the |---| separator; otherwise every row is data
+            const hasHead = table.length > 1 && /^\s*\|?[\s:|-]+\|?\s*$/.test(table[1]) && table[1].includes("-");
+            const rows = table.filter((_, i) => !(hasHead && i === 1)).map(tableCells);
+            blocks.push({ type: "table", head: hasHead ? rows[0] : [], rows: hasHead ? rows.slice(1) : rows });
+            table = null;
+        }
+    };
+    const flushAll = () => {
+        flushParagraph();
+        flushList();
+        flushTable();
+    };
 
-    for (const raw of String(text || "").replace(/\r\n?/g, "\n").split("\n")) {
-        const line = raw.trim();
-        if (/^```/.test(line)) continue; // models sometimes wrap the answer in ```markdown
-        if (!line) {
-            flushParagraph();
-            flushList();
+    for (const raw of source.split("\n")) {
+        if (code) {
+            if (/^\s*```\s*$/.test(raw)) {
+                blocks.push({ type: "code", lang: code.lang, text: code.lines.join("\n") });
+                code = null;
+            } else {
+                code.lines.push(raw);
+            }
             continue;
         }
+
+        const fence = /^\s*```\s*([\w+#.-]*)/.exec(raw);
+        if (fence) {
+            flushAll();
+            code = { lang: fence[1].toLowerCase(), lines: [] };
+            continue;
+        }
+
+        const line = raw.trim();
+        if (!line) {
+            flushAll();
+            continue;
+        }
+
+        if (line.startsWith("|")) {
+            flushParagraph();
+            flushList();
+            (table ??= []).push(line);
+            continue;
+        }
+        flushTable();
+
         let match;
         if ((match = /^(#{1,6})\s+(.*)$/.exec(line))) {
             flushParagraph();
             flushList();
-            blocks.push({ type: "heading", inlines: parseInline(match[2]) });
-        } else if ((match = /^[-*]\s+(.*)$/.exec(line))) {
+            blocks.push({ type: "heading", level: match[1].length, inlines: parseInline(match[2]) });
+        } else if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) {
             flushParagraph();
-            (list ??= []).push(parseInline(match[1]));
+            flushList();
+            blocks.push({ type: "rule" });
+        } else if ((match = /^[-*+]\s+(.*)$/.exec(line))) {
+            flushParagraph();
+            if (list && list.ordered) flushList();
+            (list ??= { ordered: false, start: 1, items: [] }).items.push(parseInline(match[1]));
+        } else if ((match = /^(\d+)[.)]\s+(.*)$/.exec(line))) {
+            flushParagraph();
+            if (list && !list.ordered) flushList();
+            (list ??= { ordered: true, start: Number(match[1]), items: [] }).items.push(parseInline(match[2]));
         } else {
             flushList();
             paragraph.push(line);
         }
     }
-    flushParagraph();
-    flushList();
+    // an unclosed fence: the rest is code
+    if (code) blocks.push({ type: "code", lang: code.lang, text: code.lines.join("\n") });
+    flushAll();
     return blocks;
+}
+
+// An answer appears in both views: parse it once.
+const blockCache = new WeakMap();
+function answerBlocks(result) {
+    if (!blockCache.has(result)) blockCache.set(result, parseMarkdown(result.answer || ""));
+    return blockCache.get(result);
+}
+
+function isFailed(result) {
+    return result.status === "generation_error" || result.status === "judge_error";
+}
+
+function questionLabel(question) {
+    const tag =
+        question.tag && String(question.tag).toLowerCase() !== question.id ? ` · ${question.tag}` : "";
+    return `${question.id}${tag}`;
 }
 
 function matrixCell(question, result) {
     if (result.status === "generation_error") {
-        return { text: "err", warn: true, muted: false, title: result.error || "" };
+        return { text: "err", warn: true, muted: false, title: result.error || "", bar: null };
     }
     if (result.status === "judge_error") {
-        return { text: "?", warn: true, muted: false, title: result.error || "" };
+        return { text: "?", warn: true, muted: false, title: result.error || "", bar: null };
     }
     let title = "";
     if (result.truncated) title = "truncated answer";
-    else if (question.no_reference) title = "no reference: not in the median";
+    else if (question.no_reference) title = `no reference: ${NO_REFERENCE}`;
     return {
-        text: `${result.score}${result.truncated ? "*" : ""}`,
+        text: `${fmtNum(result.score)}${result.truncated ? "*" : ""}`,
         warn: false,
         muted: Boolean(question.no_reference),
         title,
+        bar: clampScore(result.score),
     };
 }
 
 function evalEntry(question, result, index) {
     const generationFailed = result.status === "generation_error";
-    const failed = generationFailed || result.status === "judge_error";
+    const failed = isFailed(result);
     const notes = [];
     if (result.truncated) notes.push("truncated answer: it cannot count as a pass");
-    if (question.no_reference) notes.push("no reference answer: not included in the median");
+    if (question.no_reference) notes.push(`no reference answer: ${NO_REFERENCE}`);
 
-    const tag = question.tag && question.tag.toLowerCase() !== question.id ? ` · ${question.tag}` : "";
     return {
         qid: question.id,
         index,
-        label: `${question.id}${tag}`,
-        question: question.question,
+        label: questionLabel(question),
+        question: question.question || "",
         error: failed,
-        scoreText: failed ? "err" : String(result.score),
+        score: failed ? null : clampScore(result.score),
+        scoreText: failed ? "err" : fmtNum(result.score),
         caption: failed ? (generationFailed ? "generation failed" : "grading failed") : "/ 100",
         category: failed ? "" : CATEGORY_LABELS[result.category] || result.category || "",
         comment: failed ? result.error || "" : result.comment || "",
         answer: result.answer || "",
+        answerBlocks: answerBlocks(result),
         notes,
     };
 }
@@ -211,21 +358,21 @@ function pad2digits(number) {
 }
 
 // One card per question: the answers of all models, best first, failed ones last.
-function buildQuestionCard(question, summaryModels) {
+function buildQuestionCard(question, summaryModels, display) {
     const rows = [];
     summaryModels.forEach((stats, order) => {
         const result = (question.results || []).find((r) => r.model_name === stats.model);
         if (result) rows.push({ stats, result, order });
     });
 
-    const failed = (result) =>
-        result.status === "generation_error" || result.status === "judge_error";
-    const ranks = competitionRanks(rows.map(({ result }) => (failed(result) ? null : result.score)));
+    const ranks = competitionRanks(
+        rows.map(({ result }) => (isFailed(result) ? null : (result.score ?? null))),
+    );
 
     const entries = rows.map(({ stats, result, order }, i) => ({
         ...evalEntry(question, result, order),
         model: stats.model,
-        short: shortName(stats.model),
+        short: display(stats.model),
         rank: ranks[i],
         rankText:
             ranks[i] === null
@@ -238,23 +385,279 @@ function buildQuestionCard(question, summaryModels) {
             (a.rank === null) - (b.rank === null) || (a.rank ?? 0) - (b.rank ?? 0) || a.order - b.order,
     );
 
-    const source = question.reference.source === "none" ? "no reference" : `${question.reference.source} reference`;
-    const tag = question.tag && question.tag.toLowerCase() !== question.id ? ` · ${question.tag}` : "";
+    // Score scale: one mark per distinct score; several models on one score = a tall tick.
+    const graded = entries.filter((e) => e.score !== null);
+    const byScore = new Map();
+    graded.forEach((e) => {
+        if (!byScore.has(e.score)) byScore.set(e.score, []);
+        byScore.get(e.score).push(e.short);
+    });
+    const marks = [...byScore].map(([score, names]) => ({
+        score,
+        many: names.length > 1,
+        title: `${score}: ${names.join(", ")}`,
+    }));
+    const scores = graded.map((e) => e.score);
+    let spread = "";
+    if (scores.length === 1) spread = `one graded answer · ${scores[0]}`;
+    else if (scores.length > 1) spread = `range ${Math.min(...scores)}–${Math.max(...scores)}`;
+
+    const source = (question.reference || {}).source || "none";
     return {
         id: question.id,
-        label: `${question.id}${tag}`,
-        question: question.question,
-        metricsLine: `${rows.length} models · ${source}`,
+        label: questionLabel(question),
+        question: question.question || "",
+        metricsLine: `${rows.length} models · ${source === "none" ? "no reference" : `${source} reference`}`,
         entries,
+        marks,
+        spread,
     };
 }
 
+// --- archive --------------------------------------------------------------
+
+// Run time in ms: the id ends with YYYYMMDD_HHMMSS; the timestamp field is the fallback.
+function runTime(run) {
+    const match = /(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/.exec(run?.task_id || "");
+    if (match) {
+        const [, y, mo, d, h, mi, s] = match.map(Number);
+        return new Date(y, mo - 1, d, h, mi, s).getTime();
+    }
+    const parsed = Date.parse(run?.timestamp);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Newest first. Stable: runs with the same time keep the API order.
+function sortHistory(runs) {
+    return [...(Array.isArray(runs) ? runs : [])].sort((a, b) => runTime(b) - runTime(a));
+}
+
+// --- answers by category -------------------------------------------------
+
+const CATEGORY_ORDER = ["perfect", "acceptable", "instruction_violation", "broken_logic", "garbage"];
+
+// One row per judge category (always, also with 0, so cards compare),
+// then uncategorised and errors only when they occur.
+function buildDistribution(results) {
+    const n = results.length;
+    const counts = {};
+    let other = 0;
+    let generation = 0;
+    let judge = 0;
+    results.forEach((r) => {
+        if (r.status === "generation_error") generation += 1;
+        else if (r.status === "judge_error") judge += 1;
+        else if (CATEGORY_ORDER.includes(r.category)) counts[r.category] = (counts[r.category] || 0) + 1;
+        else other += 1;
+    });
+
+    const row = (label, count, warn = false) => {
+        const pct = n ? Math.round((100 * count) / n) : 0;
+        return { label, count, warn, pct, text: `${count} · ${pct}%` };
+    };
+    const rows = CATEGORY_ORDER.map((c) => row(CATEGORY_LABELS[c], counts[c] || 0));
+    if (other) rows.push(row("uncategorised", other));
+    if (generation) rows.push(row("generation error", generation, true));
+    if (judge) rows.push(row("judge error", judge, true));
+    return { n, rows };
+}
+
+// --- chart: median score against median t/s ------------------------------
+
+function median(values) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const n = sorted.length;
+    if (!n) return null;
+    return n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+}
+
+function round1(value) {
+    return Math.round(value * 10) / 10;
+}
+
+// 1 / 2 / 5 x 10^n, so ticks read as round numbers.
+function niceStep(range, count) {
+    const raw = range / count;
+    const pow = 10 ** Math.floor(Math.log10(raw));
+    const n = raw / pow;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
+}
+
+// Positions are percentages of the plot box: left = x, top = 100 - y.
+// The quadrant is bounded by the medians of the plotted models: "faster and
+// better than half of this run". Pareto front: no other model is both faster
+// and better.
+function buildChart(summaryModels, display, recommended) {
+    const points = [];
+    const missing = [];
+    summaryModels.forEach((stats) => {
+        const score = clampScore(stats.median);
+        const tps =
+            typeof stats.median_tps === "number" && isFinite(stats.median_tps) && stats.median_tps >= 0
+                ? stats.median_tps
+                : null;
+        const short = display(stats.model);
+        if (score === null || tps === null) missing.push(short);
+        else points.push({ model: stats.model, short, score, tps, best: stats.model === recommended });
+    });
+    if (!points.length) {
+        return { points, missing, xTicks: [], yTicks: [], pareto: "", mid: null, label: "" };
+    }
+
+    const maxTps = Math.max(...points.map((p) => p.tps));
+    const span = maxTps > 0 ? maxTps * 1.05 : 1;
+    const step = niceStep(span, 4);
+    const tickCount = Math.max(1, Math.ceil(span / step));
+    const xMax = step * tickCount;
+    const digits = step < 1 ? 1 : 0;
+    const xPos = (v) => (100 * v) / xMax;
+    const xTicks = Array.from({ length: tickCount + 1 }, (_, i) => ({
+        text: (i * step).toFixed(digits),
+        pos: xPos(i * step),
+    }));
+    // Fixed 0..100: charts of different runs stay comparable.
+    const yTicks = [0, 25, 50, 75, 100].map((v) => ({ text: String(v), pos: 100 - v }));
+
+    const midTps = median(points.map((p) => p.tps));
+    const midScore = median(points.map((p) => p.score));
+    points.forEach((p) => {
+        p.left = xPos(p.tps);
+        p.top = 100 - p.score;
+        p.flip = p.left > 70; // label on the left near the right edge
+        p.leading = p.tps >= midTps && p.score >= midScore;
+        p.title = `${p.short}: score ${p.score} · ${round1(p.tps)} t/s`;
+    });
+
+    // Walk from the fastest; a point is on the front when it beats every faster one.
+    const byTps = [...points].sort((a, b) => b.tps - a.tps || b.score - a.score);
+    const front = [];
+    let best = -Infinity;
+    byTps.forEach((p) => {
+        if (p.score > best) {
+            front.push(p);
+            best = p.score;
+        }
+    });
+    front.reverse();
+
+    const leading = points.filter((p) => p.leading).map((p) => p.short);
+    return {
+        points,
+        missing,
+        xTicks,
+        yTicks,
+        pareto: front.length > 1 ? front.map((p) => `${p.left},${p.top}`).join(" ") : "",
+        mid: {
+            left: xPos(midTps),
+            bottom: midScore,
+            flipX: xPos(midTps) > 70, // t/s label left of its line near the right edge
+            flipY: midScore > 90, // score label below its line near the top
+            tpsText: `median ${round1(midTps)} t/s`,
+            scoreText: `median ${round1(midScore)}`,
+        },
+        label: `median score against t/s, ${points.length} models. faster and better than the median: ${
+            leading.length ? leading.join(", ") : "none"
+        }.`,
+    };
+}
+
+// --- summary --------------------------------------------------------------
+
+// Rank of one model among all for a stats key; null when it has no value.
+function rankOf(summaryModels, model, key, higherIsBetter) {
+    const values = summaryModels
+        .map((m) => m[key])
+        .filter((v) => typeof v === "number" && isFinite(v));
+    const own = summaryModels.find((m) => m.model === model)?.[key];
+    if (typeof own !== "number" || !isFinite(own) || !values.length) return null;
+    const better = values.filter((v) => (higherIsBetter ? v > own : v < own)).length;
+    return {
+        rank: better + 1,
+        n: values.length,
+        best: higherIsBetter ? Math.max(...values) : Math.min(...values),
+    };
+}
+
+// Four key figures of the recommended model, each with its place in the run.
+function verdictFigures(summaryModels, model) {
+    const s = summaryModels.find((m) => m.model === model);
+    if (!s) return [];
+    const num = (v) => (typeof v === "number" && isFinite(v) ? String(round1(v)) : "–");
+    const caption = (r, fmt) => {
+        if (!r) return "";
+        if (r.rank === 1) return r.n > 1 ? `best of ${r.n}` : "only model";
+        return `#${r.rank} of ${r.n} · best ${fmt(r.best)}`;
+    };
+    return [
+        {
+            label: "median score",
+            value: num(s.median),
+            unit: "/ 100",
+            caption: caption(rankOf(summaryModels, model, "median", true), num),
+        },
+        {
+            label: "pass rate",
+            value: s.pass_rate == null ? "–" : String(Math.round(s.pass_rate * 100)),
+            unit: "%",
+            caption: caption(rankOf(summaryModels, model, "pass_rate", true), (v) => `${Math.round(v * 100)}%`),
+        },
+        {
+            label: "speed",
+            value: num(s.median_tps),
+            unit: "t/s",
+            caption: caption(rankOf(summaryModels, model, "median_tps", true), num),
+        },
+        {
+            label: "median time",
+            value: num(s.median_time_sec),
+            unit: "s",
+            caption: caption(rankOf(summaryModels, model, "median_time_sec", false), (v) => `${num(v)} s`),
+        },
+    ];
+}
+
+// The judge writes full model names; show the same short names as the rest of the UI.
+// Longest first, so a name that contains another one is replaced as a whole.
+function shortenNames(blocks, names) {
+    const pairs = Object.entries(names)
+        .filter(([full, short]) => full !== short)
+        .sort((a, b) => b[0].length - a[0].length);
+    if (!pairs.length) return blocks;
+    const fix = (parts) =>
+        parts.forEach((p) => {
+            pairs.forEach(([full, short]) => {
+                if (p.text.includes(full)) p.text = p.text.split(full).join(short);
+            });
+        });
+    blocks.forEach((b) => {
+        if (b.inlines) fix(b.inlines);
+        if (b.items) b.items.forEach(fix);
+        if (b.head) b.head.forEach(fix);
+        if (b.rows) b.rows.forEach((row) => row.forEach(fix));
+    });
+    return blocks;
+}
+
 // Everything the results screen shows, computed once per opened run.
+// Throws ReportFormatError for files the UI cannot read (older schema).
 function buildReport(data) {
-    const questions = data.questions_results || [];
+    if (
+        !data ||
+        !Array.isArray(data.questions_results) ||
+        !data.summary ||
+        !Array.isArray(data.summary.models)
+    ) {
+        throw new ReportFormatError("this run was saved in an older format and cannot be shown.");
+    }
+
+    const questions = data.questions_results;
     const summary = data.summary;
-    const rec = summary.recommendation;
+    const rec = summary.recommendation || {};
     const metrics = data.metrics || {};
+    const summaryModels = summary.models.filter((s) => s && typeof s.model === "string");
+
+    const names = shortNames([...summaryModels.map((s) => s.model), rec.model]);
+    const display = (m) => names[m] || shortName(m);
 
     const notes = [];
     if (data.judge_is_candidate) {
@@ -262,80 +665,92 @@ function buildReport(data) {
     }
     const withoutReference = questions.filter((q) => q.no_reference).length;
     if (withoutReference) {
-        notes.push(
-            `${withoutReference} question(s) have no reference answer and are excluded from the scores.`,
-        );
+        notes.push(`${withoutReference} question(s) have no reference answer: ${NO_REFERENCE}.`);
     }
     if (rec.model && rec.confidence === "low") {
         notes.push("low confidence: too few graded questions.");
     }
 
-    const models = summary.models.map((stats) => {
+    const models = summaryModels.map((stats) => {
         const cells = [];
         const entries = [];
+        const results = [];
         questions.forEach((question, index) => {
             const result = (question.results || []).find((r) => r.model_name === stats.model);
             if (!result) {
-                cells.push({ text: "–", warn: false, muted: true, title: "" });
+                cells.push({ text: "–", warn: false, muted: true, title: "", bar: null });
                 return;
             }
+            results.push(result);
             cells.push(matrixCell(question, result));
             entries.push(evalEntry(question, result, index));
         });
 
         const total = metrics[stats.model] || {};
-        const pass = stats.pass_rate === null ? "–" : `${Math.round(stats.pass_rate * 100)}%`;
+        const pass = stats.pass_rate == null ? "–" : `${Math.round(stats.pass_rate * 100)}%`;
+        const totalTime =
+            typeof total.total_time_sec === "number" && total.total_time_sec > 0
+                ? `${total.total_time_sec.toFixed(1)} s total`
+                : null;
         return {
             model: stats.model,
-            short: shortName(stats.model),
+            short: display(stats.model),
             median: fmtNum(stats.median),
             passRate: pass,
             tps: fmtNum(stats.median_tps),
             time: fmtNum(stats.median_time_sec),
             cells,
             entries,
+            distribution: buildDistribution(results),
             metricsLine: [
                 `median ${fmtNum(stats.median)}`,
                 `pass ${pass}`,
-                `fails ${stats.fails}`,
-                `critical ${stats.critical_fails}`,
-                `errors ${stats.errors}`,
-                `judge errors ${stats.judge_errors}`,
+                `fails ${fmtNum(stats.fails)}`,
+                `critical ${fmtNum(stats.critical_fails)}`,
+                `errors ${fmtNum(stats.errors)}`,
+                `judge errors ${fmtNum(stats.judge_errors)}`,
                 `${fmtNum(stats.median_tps)} t/s`,
-                total.total_time_sec ? `${total.total_time_sec.toFixed(1)} s total` : null,
+                totalTime,
             ]
                 .filter(Boolean)
                 .join(" · "),
         };
     });
 
-    const finished = data.finished_at ? data.finished_at.replace("T", " ").slice(0, 16) : "";
+    const finished =
+        typeof data.finished_at === "string" ? data.finished_at.replace("T", " ").slice(0, 16) : "";
     return {
         meta: [
             finished && `finished ${finished}`,
-            `judge: ${data.judge_model}`,
+            data.judge_model && `judge: ${data.judge_model}`,
             data.mode === "cloud" ? "cloud judge" : "local judge",
         ]
             .filter(Boolean)
             .join(" · "),
         verdict: {
-            model: rec.model,
-            short: rec.model ? shortName(rec.model) : "",
+            model: rec.model || null,
+            short: rec.model ? display(rec.model) : "",
             label: rec.model ? "recommended" : "no recommendation",
-            rule: RULE_LABELS[rec.rule] || rec.rule,
+            rule: RULE_LABELS[rec.rule] || rec.rule || "",
+            figures: rec.model ? verdictFigures(summaryModels, rec.model) : [],
         },
         notes,
-        summaryBlocks: parseMarkdown(summary.text),
+        summaryBlocks: shortenNames(parseMarkdown(summary.text, { bareFence: true }), names),
+        chart: buildChart(summaryModels, display, rec.model),
         // model | median | pass | one column per question | t/s | time
         grid: `grid-template-columns:minmax(160px,1fr) 64px 64px repeat(${questions.length},48px) 64px 64px`,
         questionHeads: questions.map((q) => ({ id: q.id, title: q.tag || "" })),
         models,
-        questionCards: questions.map((q) => buildQuestionCard(q, summary.models)),
-        references: questions.map((q) => ({
-            id: q.id,
-            title: `${q.id} · ${q.tag || "–"} · ${q.reference.source}`,
-            question: q.question,
-            text: q.reference.text || "no reference answer.",
-        })),
+        questionCards: questions.map((q) => buildQuestionCard(q, summaryModels, display)),
+        references: questions.map((q) => {
+            const ref = q.reference || {};
+            return {
+                id: q.id,
+                title: `${q.id} · ${q.tag || "–"} · ${ref.source || "none"}`,
+                question: q.question || "",
+                text: ref.text || "",
+                blocks: parseMarkdown(ref.text || ""),
+            };
+        }),
     };
 }

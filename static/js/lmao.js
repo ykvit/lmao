@@ -40,6 +40,7 @@ document.addEventListener("alpine:init", () => {
 
         view: "idle", // idle | running | results
         resultsView: "model", // model | question
+        comparisonView: "table", // table | chart
 
         // `short` is the label of the progress segment (a quarter of the width).
         phaseGroups: [
@@ -270,7 +271,7 @@ document.addEventListener("alpine:init", () => {
             try {
                 const response = await fetch("/api/history");
                 if (!response.ok) throw new Error(`request failed (${response.status})`);
-                this.history = await response.json();
+                this.history = sortHistory(await response.json());
                 this.historyError = "";
             } catch (e) {
                 console.error("Failed to load history:", e);
@@ -302,11 +303,12 @@ document.addEventListener("alpine:init", () => {
                     report = buildReport(data);
                 } catch (e) {
                     console.error("Cannot build the report:", e);
-                    throw new Error(
-                        e instanceof ReportFormatError
-                            ? e.message
-                            : "this run cannot be shown: the file has an unexpected format.",
-                    );
+                    // TypeError: a field is missing or has another type -> the file.
+                    // Anything else (ReferenceError...) is a bug in the UI, not the file.
+                    let message = "the report could not be built: a bug in the UI, see the browser console.";
+                    if (e instanceof ReportFormatError) message = e.message;
+                    else if (e instanceof TypeError) message = "this run cannot be shown: the file has an unexpected format.";
+                    throw new Error(message);
                 }
                 this.report = report;
                 this.results = data;
@@ -629,9 +631,17 @@ document.addEventListener("alpine:init", () => {
             event.preventDefault();
         },
 
-        switchTab(next) {
-            this.resultsView = next;
-            this.$nextTick(() => document.getElementById(`tab-${next}`)?.focus());
+        // Tabs (ui.tabs): `key` is the state property, ids are tab-<key>-<value>.
+        setTab(key, value) {
+            this[key] = value;
+            this.$nextTick(() => document.getElementById(`tab-${key}-${value}`)?.focus());
+        },
+
+        // `list`: comma-separated values in tab order; `step`: +1 / -1, wraps around.
+        cycleTab(key, list, step) {
+            const values = list.split(",");
+            const index = values.indexOf(this[key]);
+            this.setTab(key, values[(index + step + values.length) % values.length]);
         },
 
         // --- row helpers ----------------------------------------------------

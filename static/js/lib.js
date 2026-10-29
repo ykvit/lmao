@@ -153,27 +153,51 @@ function clampScore(value) {
     return typeof value === "number" && isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
 }
 
-// 'Markdown' of the judge summary -> blocks. Nothing here touches the DOM:
-// the template renders the blocks with x-text, so no HTML is ever injected.
-// Supported: # headings, - lists, paragraphs, **bold**. Everything else stays text.
+// Markdown -> blocks. Nothing here touches the DOM: the template renders the
+// blocks with x-text, so no HTML from a model is ever injected or executed.
+// Blocks: heading, paragraph, list (- * + and 1.), code (``` fences), table, rule.
+// Inline: **bold**, `code`. Everything else (links, italics, HTML) stays text.
 function parseInline(text) {
     const parts = [];
-    const re = /\*\*(.+?)\*\*/g;
+    const re = /`([^`]+)`|\*\*(.+?)\*\*/g;
     let last = 0;
     let match;
     while ((match = re.exec(text))) {
-        if (match.index > last) parts.push({ text: text.slice(last, match.index), bold: false });
-        parts.push({ text: match[1], bold: true });
+        if (match.index > last) parts.push({ text: text.slice(last, match.index), bold: false, code: false });
+        if (match[1] !== undefined) parts.push({ text: match[1], bold: false, code: true });
+        else parts.push({ text: match[2], bold: true, code: false });
         last = match.index + match[0].length;
     }
-    if (last < text.length) parts.push({ text: text.slice(last), bold: false });
+    if (last < text.length) parts.push({ text: text.slice(last), bold: false, code: false });
     return parts;
 }
 
-function parseMarkdown(text) {
+// Models often wrap the whole text in ```markdown ... ```. Unwrap it;
+// with `bareToo` also a fence without a language (the judge summary).
+function unwrapFence(text, bareToo) {
+    const match = /^\s*```([\w-]*)[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(text);
+    if (!match) return text;
+    const lang = match[1].toLowerCase();
+    return lang === "markdown" || lang === "md" || (bareToo && !lang) ? match[2] : text;
+}
+
+// '| a | b |' -> ['a', 'b']
+function tableCells(line) {
+    return line
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((cell) => parseInline(cell.trim()));
+}
+
+function parseMarkdown(text, options = {}) {
+    const source = unwrapFence(String(text || "").replace(/\r\n?/g, "\n"), options.bareFence);
     const blocks = [];
     let paragraph = [];
     let list = null;
+    let table = null;
+    let code = null;
 
     const flushParagraph = () => {
         if (paragraph.length) {
@@ -183,35 +207,90 @@ function parseMarkdown(text) {
     };
     const flushList = () => {
         if (list) {
-            blocks.push({ type: "list", items: list });
+            blocks.push({ type: "list", ...list });
             list = null;
         }
     };
+    const flushTable = () => {
+        if (table) {
+            // a header row needs the |---| separator; otherwise every row is data
+            const hasHead = table.length > 1 && /^\s*\|?[\s:|-]+\|?\s*$/.test(table[1]) && table[1].includes("-");
+            const rows = table.filter((_, i) => !(hasHead && i === 1)).map(tableCells);
+            blocks.push({ type: "table", head: hasHead ? rows[0] : [], rows: hasHead ? rows.slice(1) : rows });
+            table = null;
+        }
+    };
+    const flushAll = () => {
+        flushParagraph();
+        flushList();
+        flushTable();
+    };
 
-    for (const raw of String(text || "").replace(/\r\n?/g, "\n").split("\n")) {
-        const line = raw.trim();
-        if (/^```/.test(line)) continue; // models sometimes wrap the answer in ```markdown
-        if (!line) {
-            flushParagraph();
-            flushList();
+    for (const raw of source.split("\n")) {
+        if (code) {
+            if (/^\s*```\s*$/.test(raw)) {
+                blocks.push({ type: "code", lang: code.lang, text: code.lines.join("\n") });
+                code = null;
+            } else {
+                code.lines.push(raw);
+            }
             continue;
         }
+
+        const fence = /^\s*```\s*([\w+#.-]*)/.exec(raw);
+        if (fence) {
+            flushAll();
+            code = { lang: fence[1].toLowerCase(), lines: [] };
+            continue;
+        }
+
+        const line = raw.trim();
+        if (!line) {
+            flushAll();
+            continue;
+        }
+
+        if (line.startsWith("|")) {
+            flushParagraph();
+            flushList();
+            (table ??= []).push(line);
+            continue;
+        }
+        flushTable();
+
         let match;
         if ((match = /^(#{1,6})\s+(.*)$/.exec(line))) {
             flushParagraph();
             flushList();
-            blocks.push({ type: "heading", inlines: parseInline(match[2]) });
-        } else if ((match = /^[-*]\s+(.*)$/.exec(line))) {
+            blocks.push({ type: "heading", level: match[1].length, inlines: parseInline(match[2]) });
+        } else if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) {
             flushParagraph();
-            (list ??= []).push(parseInline(match[1]));
+            flushList();
+            blocks.push({ type: "rule" });
+        } else if ((match = /^[-*+]\s+(.*)$/.exec(line))) {
+            flushParagraph();
+            if (list && list.ordered) flushList();
+            (list ??= { ordered: false, start: 1, items: [] }).items.push(parseInline(match[1]));
+        } else if ((match = /^(\d+)[.)]\s+(.*)$/.exec(line))) {
+            flushParagraph();
+            if (list && !list.ordered) flushList();
+            (list ??= { ordered: true, start: Number(match[1]), items: [] }).items.push(parseInline(match[2]));
         } else {
             flushList();
             paragraph.push(line);
         }
     }
-    flushParagraph();
-    flushList();
+    // an unclosed fence: the rest is code
+    if (code) blocks.push({ type: "code", lang: code.lang, text: code.lines.join("\n") });
+    flushAll();
     return blocks;
+}
+
+// An answer appears in both views: parse it once.
+const blockCache = new WeakMap();
+function answerBlocks(result) {
+    if (!blockCache.has(result)) blockCache.set(result, parseMarkdown(result.answer || ""));
+    return blockCache.get(result);
 }
 
 function isFailed(result) {
@@ -262,6 +341,7 @@ function evalEntry(question, result, index) {
         category: failed ? "" : CATEGORY_LABELS[result.category] || result.category || "",
         comment: failed ? result.error || "" : result.comment || "",
         answer: result.answer || "",
+        answerBlocks: answerBlocks(result),
         notes,
     };
 }
@@ -334,6 +414,151 @@ function buildQuestionCard(question, summaryModels, display) {
     };
 }
 
+// --- archive --------------------------------------------------------------
+
+// Run time in ms: the id ends with YYYYMMDD_HHMMSS; the timestamp field is the fallback.
+function runTime(run) {
+    const match = /(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/.exec(run?.task_id || "");
+    if (match) {
+        const [, y, mo, d, h, mi, s] = match.map(Number);
+        return new Date(y, mo - 1, d, h, mi, s).getTime();
+    }
+    const parsed = Date.parse(run?.timestamp);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Newest first. Stable: runs with the same time keep the API order.
+function sortHistory(runs) {
+    return [...(Array.isArray(runs) ? runs : [])].sort((a, b) => runTime(b) - runTime(a));
+}
+
+// --- answers by category -------------------------------------------------
+
+const CATEGORY_ORDER = ["perfect", "acceptable", "instruction_violation", "broken_logic", "garbage"];
+
+// One row per judge category (always, also with 0, so cards compare),
+// then uncategorised and errors only when they occur.
+function buildDistribution(results) {
+    const n = results.length;
+    const counts = {};
+    let other = 0;
+    let generation = 0;
+    let judge = 0;
+    results.forEach((r) => {
+        if (r.status === "generation_error") generation += 1;
+        else if (r.status === "judge_error") judge += 1;
+        else if (CATEGORY_ORDER.includes(r.category)) counts[r.category] = (counts[r.category] || 0) + 1;
+        else other += 1;
+    });
+
+    const row = (label, count, warn = false) => {
+        const pct = n ? Math.round((100 * count) / n) : 0;
+        return { label, count, warn, pct, text: `${count} · ${pct}%` };
+    };
+    const rows = CATEGORY_ORDER.map((c) => row(CATEGORY_LABELS[c], counts[c] || 0));
+    if (other) rows.push(row("uncategorised", other));
+    if (generation) rows.push(row("generation error", generation, true));
+    if (judge) rows.push(row("judge error", judge, true));
+    return { n, rows };
+}
+
+// --- chart: median score against median t/s ------------------------------
+
+function median(values) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const n = sorted.length;
+    if (!n) return null;
+    return n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+}
+
+function round1(value) {
+    return Math.round(value * 10) / 10;
+}
+
+// 1 / 2 / 5 x 10^n, so ticks read as round numbers.
+function niceStep(range, count) {
+    const raw = range / count;
+    const pow = 10 ** Math.floor(Math.log10(raw));
+    const n = raw / pow;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
+}
+
+// Positions are percentages of the plot box: left = x, top = 100 - y.
+// The quadrant is bounded by the medians of the plotted models: "faster and
+// better than half of this run". Pareto front: no other model is both faster
+// and better.
+function buildChart(summaryModels, display, recommended) {
+    const points = [];
+    const missing = [];
+    summaryModels.forEach((stats) => {
+        const score = clampScore(stats.median);
+        const tps =
+            typeof stats.median_tps === "number" && isFinite(stats.median_tps) && stats.median_tps >= 0
+                ? stats.median_tps
+                : null;
+        const short = display(stats.model);
+        if (score === null || tps === null) missing.push(short);
+        else points.push({ model: stats.model, short, score, tps, best: stats.model === recommended });
+    });
+    if (!points.length) {
+        return { points, missing, xTicks: [], yTicks: [], pareto: "", mid: null, label: "" };
+    }
+
+    const maxTps = Math.max(...points.map((p) => p.tps));
+    const span = maxTps > 0 ? maxTps * 1.05 : 1;
+    const step = niceStep(span, 4);
+    const tickCount = Math.max(1, Math.ceil(span / step));
+    const xMax = step * tickCount;
+    const digits = step < 1 ? 1 : 0;
+    const xPos = (v) => (100 * v) / xMax;
+    const xTicks = Array.from({ length: tickCount + 1 }, (_, i) => ({
+        text: (i * step).toFixed(digits),
+        pos: xPos(i * step),
+    }));
+    // Fixed 0..100: charts of different runs stay comparable.
+    const yTicks = [0, 25, 50, 75, 100].map((v) => ({ text: String(v), pos: 100 - v }));
+
+    const midTps = median(points.map((p) => p.tps));
+    const midScore = median(points.map((p) => p.score));
+    points.forEach((p) => {
+        p.left = xPos(p.tps);
+        p.top = 100 - p.score;
+        p.flip = p.left > 70; // label on the left near the right edge
+        p.leading = p.tps >= midTps && p.score >= midScore;
+        p.title = `${p.short}: score ${p.score} · ${round1(p.tps)} t/s`;
+    });
+
+    // Walk from the fastest; a point is on the front when it beats every faster one.
+    const byTps = [...points].sort((a, b) => b.tps - a.tps || b.score - a.score);
+    const front = [];
+    let best = -Infinity;
+    byTps.forEach((p) => {
+        if (p.score > best) {
+            front.push(p);
+            best = p.score;
+        }
+    });
+    front.reverse();
+
+    const leading = points.filter((p) => p.leading).map((p) => p.short);
+    return {
+        points,
+        missing,
+        xTicks,
+        yTicks,
+        pareto: front.length > 1 ? front.map((p) => `${p.left},${p.top}`).join(" ") : "",
+        mid: {
+            left: xPos(midTps),
+            bottom: midScore,
+            tpsText: `median ${round1(midTps)} t/s`,
+            scoreText: `median ${round1(midScore)}`,
+        },
+        label: `median score against t/s, ${points.length} models. faster and better than the median: ${
+            leading.length ? leading.join(", ") : "none"
+        }.`,
+    };
+}
+
 // Everything the results screen shows, computed once per opened run.
 // Throws ReportFormatError for files the UI cannot read (older schema).
 function buildReport(data) {
@@ -370,12 +595,14 @@ function buildReport(data) {
     const models = summaryModels.map((stats) => {
         const cells = [];
         const entries = [];
+        const results = [];
         questions.forEach((question, index) => {
             const result = (question.results || []).find((r) => r.model_name === stats.model);
             if (!result) {
                 cells.push({ text: "–", warn: false, muted: true, title: "", bar: null });
                 return;
             }
+            results.push(result);
             cells.push(matrixCell(question, result));
             entries.push(evalEntry(question, result, index));
         });
@@ -395,6 +622,7 @@ function buildReport(data) {
             time: fmtNum(stats.median_time_sec),
             cells,
             entries,
+            distribution: buildDistribution(results),
             metricsLine: [
                 `median ${fmtNum(stats.median)}`,
                 `pass ${pass}`,
@@ -427,7 +655,8 @@ function buildReport(data) {
             rule: RULE_LABELS[rec.rule] || rec.rule || "",
         },
         notes,
-        summaryBlocks: parseMarkdown(summary.text),
+        summaryBlocks: parseMarkdown(summary.text, { bareFence: true }),
+        chart: buildChart(summaryModels, display, rec.model),
         // model | median | pass | one column per question | t/s | time
         grid: `grid-template-columns:minmax(160px,1fr) 64px 64px repeat(${questions.length},48px) 64px 64px`,
         questionHeads: questions.map((q) => ({ id: q.id, title: q.tag || "" })),
@@ -439,7 +668,8 @@ function buildReport(data) {
                 id: q.id,
                 title: `${q.id} · ${q.tag || "–"} · ${ref.source || "none"}`,
                 question: q.question || "",
-                text: ref.text || "no reference answer.",
+                text: ref.text || "",
+                blocks: parseMarkdown(ref.text || ""),
             };
         }),
     };

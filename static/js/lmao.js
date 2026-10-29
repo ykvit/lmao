@@ -31,6 +31,7 @@ document.addEventListener("alpine:init", () => {
         endedAt: null,
         now: 0,
         error: "",
+        expanded: {}, // phase -> true/false, set by the user; default: folded when done without errors
     });
 
     Alpine.data("lmao", () => ({
@@ -69,7 +70,8 @@ document.addEventListener("alpine:init", () => {
         report: null,
 
         announcement: "", // text of the page live region
-
+        // Clipboard API exists only in a secure context (localhost / https).
+        canCopy: Boolean(window.isSecureContext && navigator.clipboard),
         init() {
             this.loadModels();
             this.loadHistory();
@@ -133,31 +135,63 @@ document.addEventListener("alpine:init", () => {
         // independently (a cloud judge grades while local candidates still answer).
         // error and skipped rows are finished too; errors are counted separately.
         get phaseProgress() {
-            return this.phaseGroups.map((g) => {
-                let total = 0;
-                let open = 0; // queued or running
-                let running = 0;
-                let errors = 0;
-                for (const s of this.run.steps) {
-                    if (s.phase !== g.phase) continue;
-                    total += 1;
-                    if (s.state === "queued" || s.state === "running") open += 1;
-                    if (s.state === "running") running += 1;
-                    if (s.state === "error") errors += 1;
-                }
-                const finished = total - open;
-                let state = "queued";
-                if (running) state = "running";
-                else if (total && !open) state = "done";
-                return {
-                    ...g,
-                    total,
-                    finished,
-                    errors,
-                    state,
-                    pct: total ? Math.round((100 * finished) / total) : 0,
-                };
-            });
+            return this.phaseGroups.map((g) => this.phaseStats(g));
+        },
+
+        // Duration = wall clock from the first start to the last done (server
+        // timestamps), so parallel calls are not added up.
+        phaseStats(g) {
+            let total = 0;
+            let open = 0; // queued or running
+            let running = 0;
+            let errors = 0;
+            let first = Infinity;
+            let last = -Infinity;
+            for (const s of this.run.steps) {
+                if (s.phase !== g.phase) continue;
+                total += 1;
+                if (s.state === "queued" || s.state === "running") open += 1;
+                if (s.state === "running") running += 1;
+                if (s.state === "error") errors += 1;
+                if (s.startTs !== null) first = Math.min(first, s.startTs);
+                if (s.endTs !== null) last = Math.max(last, s.endTs);
+            }
+            const finished = total - open;
+            let state = "queued";
+            if (running) state = "running";
+            else if (total && !open) state = "done";
+
+            const span =
+                state === "done" && Number.isFinite(first) && Number.isFinite(last)
+                    ? fmtSpan((last - first) / 1000)
+                    : "";
+            // A single-call phase (summary) needs no counter.
+            const count = total > 1 ? `${finished} / ${total}` : "";
+            return {
+                ...g,
+                total,
+                finished,
+                errors,
+                state,
+                side: [count, span].filter(Boolean).join(" · "),
+                pct: total ? Math.round((100 * finished) / total) : 0,
+            };
+        },
+
+        phaseOf(phase) {
+            return this.phaseStats(this.phaseGroups.find((g) => g.phase === phase));
+        },
+
+        // A finished phase folds into its header. Phases with errors stay open
+        // unless the user folds them.
+        isCollapsed(phase) {
+            const p = this.phaseOf(phase);
+            if (p.state !== "done") return false;
+            return !(this.run.expanded[phase] ?? p.errors > 0);
+        },
+
+        togglePhase(phase) {
+            this.run.expanded[phase] = this.isCollapsed(phase);
         },
 
         // First screen: the state of the form as status rows.
@@ -488,6 +522,7 @@ document.addEventListener("alpine:init", () => {
             const sec =
                 step.startTs !== null && Number.isFinite(end) ? (end - step.startTs) / 1000 : NaN;
             const duration = fmtSeconds(sec);
+            step.endTs = Number.isFinite(end) ? end : null;
 
             if (event.success) {
                 step.state = "done";
@@ -566,6 +601,32 @@ document.addEventListener("alpine:init", () => {
             document
                 .getElementById(`phase-${phase}`)
                 ?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+        },
+
+        async copyText(text) {
+            try {
+                await navigator.clipboard.writeText(String(text ?? ""));
+                return true;
+            } catch (e) {
+                console.error("Copy failed:", e);
+                return false;
+            }
+        },
+
+        // [ and ] toggle the panels, Esc goes to the first screen.
+        // event.code: the same physical keys on any layout (х / ї in Ukrainian).
+        // Ignored while typing and with modifiers.
+        hotkey(event) {
+            if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+                return;
+            }
+            if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+
+            if (event.code === "BracketLeft") this.setupOpen = !this.setupOpen;
+            else if (event.code === "BracketRight") this.archiveOpen = !this.archiveOpen;
+            else if (event.code === "Escape" && this.view !== "idle") this.goHome();
+            else return;
+            event.preventDefault();
         },
 
         switchTab(next) {

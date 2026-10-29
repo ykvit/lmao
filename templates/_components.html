@@ -19,11 +19,17 @@
 <div{% if id %} id="{{ id }}"{% endif %} class="pb-8 border-b border-line text-fg-muted"{% if text_expr %} x-text="{{ text_expr }}"{% endif %}>{{ text }}</div>
 {%- endmacro %}
 
-{# Code box: answers and reference texts. #}
+{# Code box: answers and reference texts. `copy` only in a secure context
+   (localhost / https): the Clipboard API does not exist elsewhere. #}
 {% macro code_box(text, show="") -%}
-<pre{% if show %} x-show="{{ show }}"{% endif %}
-     class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words"
-     x-text="{{ text }}"></pre>
+<div{% if show %} x-show="{{ show }}"{% endif %} class="relative" x-data="{ copied: false }">
+    <pre class="bg-surface border border-line p-15 pr-66 font-mono text-caption font-light whitespace-pre-wrap break-words"
+         x-text="{{ text }}"></pre>
+    <button type="button" x-show="canCopy"
+            @click="copyText({{ text }}).then((ok) => { copied = ok; setTimeout(() => (copied = false), 1500); })"
+            class="absolute top-8 right-8 px-8 py-4 bg-surface text-fg-muted hover:text-fg"
+            x-text="copied ? 'copied' : 'copy'"></button>
+</div>
 {%- endmacro %}
 
 {# Warn notice: errors only. Optional action button. #}
@@ -116,9 +122,10 @@
 
 {# nav-toggle (4:51). Label beside the icon, mirrored on the right side,
    so both toggles have the same height and centre line. #}
-{% macro nav_toggle(flag, controls, label, side="left") -%}
+{% macro nav_toggle(flag, controls, label, side="left", key="") -%}
 <button type="button" @click="{{ flag }} = !{{ flag }}"
         :aria-expanded="{{ flag }}" aria-controls="{{ controls }}"
+        {%- if key %} aria-keyshortcuts="{{ key }}" title="{{ label }} ({{ key }})"{% endif %}
         class="flex items-center gap-8 hover:text-fg"
         :class="{{ flag }} ? 'text-fg' : 'text-fg-muted'">
     {%- if side == "right" %}

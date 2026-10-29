@@ -76,6 +76,7 @@ function buildSteps(judge, candidates, questionCount, names = {}) {
         meta: "",
         startedAt: null, // client clock, for the live timer
         startTs: null, // server timestamp, for the final duration
+        endTs: null, // server timestamp, for the phase duration
         loading: false, // first call of a model load group: the load notice may apply
         announced: false, // the load notice was already announced to screen readers
     });
@@ -116,6 +117,12 @@ function fmtClock(sec) {
     return `${mm}:${ss}`;
 }
 
+// Phase duration: '41.2 s' under a minute, '05:12' above.
+function fmtSpan(sec) {
+    if (typeof sec !== "number" || !isFinite(sec) || sec < 0) return "";
+    return sec < 60 ? `${sec.toFixed(1)} s` : fmtClock(sec);
+}
+
 // --- results --------------------------------------------------------------
 
 // UI labels for the stable ids stored in the results.
@@ -139,6 +146,11 @@ class ReportFormatError extends Error {}
 
 function fmtNum(value) {
     return value === null || value === undefined ? "–" : String(value);
+}
+
+// Score as a 0..100 number for bars and scales, or null.
+function clampScore(value) {
+    return typeof value === "number" && isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
 }
 
 // 'Markdown' of the judge summary -> blocks. Nothing here touches the DOM:
@@ -214,10 +226,10 @@ function questionLabel(question) {
 
 function matrixCell(question, result) {
     if (result.status === "generation_error") {
-        return { text: "err", warn: true, muted: false, title: result.error || "" };
+        return { text: "err", warn: true, muted: false, title: result.error || "", bar: null };
     }
     if (result.status === "judge_error") {
-        return { text: "?", warn: true, muted: false, title: result.error || "" };
+        return { text: "?", warn: true, muted: false, title: result.error || "", bar: null };
     }
     let title = "";
     if (result.truncated) title = "truncated answer";
@@ -227,6 +239,7 @@ function matrixCell(question, result) {
         warn: false,
         muted: Boolean(question.no_reference),
         title,
+        bar: clampScore(result.score),
     };
 }
 
@@ -243,6 +256,7 @@ function evalEntry(question, result, index) {
         label: questionLabel(question),
         question: question.question || "",
         error: failed,
+        score: failed ? null : clampScore(result.score),
         scoreText: failed ? "err" : fmtNum(result.score),
         caption: failed ? (generationFailed ? "generation failed" : "grading failed") : "/ 100",
         category: failed ? "" : CATEGORY_LABELS[result.category] || result.category || "",
@@ -291,6 +305,23 @@ function buildQuestionCard(question, summaryModels, display) {
             (a.rank === null) - (b.rank === null) || (a.rank ?? 0) - (b.rank ?? 0) || a.order - b.order,
     );
 
+    // Score scale: one mark per distinct score; several models on one score = a tall tick.
+    const graded = entries.filter((e) => e.score !== null);
+    const byScore = new Map();
+    graded.forEach((e) => {
+        if (!byScore.has(e.score)) byScore.set(e.score, []);
+        byScore.get(e.score).push(e.short);
+    });
+    const marks = [...byScore].map(([score, names]) => ({
+        score,
+        many: names.length > 1,
+        title: `${score}: ${names.join(", ")}`,
+    }));
+    const scores = graded.map((e) => e.score);
+    let spread = "";
+    if (scores.length === 1) spread = `one graded answer · ${scores[0]}`;
+    else if (scores.length > 1) spread = `range ${Math.min(...scores)}–${Math.max(...scores)}`;
+
     const source = (question.reference || {}).source || "none";
     return {
         id: question.id,
@@ -298,6 +329,8 @@ function buildQuestionCard(question, summaryModels, display) {
         question: question.question || "",
         metricsLine: `${rows.length} models · ${source === "none" ? "no reference" : `${source} reference`}`,
         entries,
+        marks,
+        spread,
     };
 }
 
@@ -340,7 +373,7 @@ function buildReport(data) {
         questions.forEach((question, index) => {
             const result = (question.results || []).find((r) => r.model_name === stats.model);
             if (!result) {
-                cells.push({ text: "–", warn: false, muted: true, title: "" });
+                cells.push({ text: "–", warn: false, muted: true, title: "", bar: null });
                 return;
             }
             cells.push(matrixCell(question, result));

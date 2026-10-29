@@ -122,50 +122,35 @@
     </div>
 </div>
 
-{# running #}
+{# running. Elapsed time and step count live in the topbar. #}
 <div x-show="view === 'running'" x-cloak class="flex flex-col gap-33">
 
-    <div class="flex flex-col gap-15">
-        <div class="flex justify-between items-center">
-            <div class="flex items-center gap-8"
-                 :class="run.status === 'error' ? 'text-warn' : 'text-fg'">
-                {{ ui.activity_dot("run.status === 'running'") }}
-                <span class="text-subheading"
-                      x-text="run.status === 'error' ? 'stopped' : 'running'"></span>
-            </div>
-            <div class="text-fg-muted flex items-center gap-15">
-                <span x-text="'elapsed ' + fmtClock(elapsed)"></span>
-                <span x-text="run.done + ' / ' + run.total"></span>
-            </div>
-        </div>
+    {# Overall progress for assistive tech; the segments are the visual. #}
+    <div role="progressbar" aria-label="evaluation progress" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100"
+         :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="sr-only"></div>
 
-        {# Overall progress for assistive tech; the segments below are the visual. #}
-        <div role="progressbar" aria-label="evaluation progress" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100"
-             :aria-valuetext="run.done + ' of ' + run.total + ' steps'" class="sr-only"></div>
-
-        {# One segment per phase, equal width: phases fill independently. #}
-        <div class="grid grid-cols-4 gap-33">
-            <template x-for="p in phaseProgress" :key="p.phase">
-                <button type="button" @click="scrollToPhase(p.phase)"
-                        :aria-label="p.title + ': ' + p.finished + ' of ' + p.total + (p.errors ? ', ' + p.errors + ' errors' : '')"
-                        class="min-w-0 flex flex-col gap-8 text-left">
-                    <span class="flex items-center justify-between gap-8">
-                        <span class="min-w-0 flex items-center gap-8" :class="stateClass(p.state)">
-                            {{ ui.activity_dot("p.state === 'running'") }}
-                            <span class="truncate" x-text="p.short"></span>
-                        </span>
-                        <span class="shrink-0 text-fg-muted">
-                            <span x-text="p.finished + ' / ' + p.total"></span><span
-                                  x-show="p.errors" class="text-warn" x-text="' · ' + p.errors + ' err'"></span>
-                        </span>
+    {# One segment per phase. Summary is a single call: half the width, no counter. #}
+    <div class="grid grid-cols-[2fr_2fr_2fr_1fr] gap-33">
+        <template x-for="p in phaseProgress" :key="p.phase">
+            <button type="button" @click="scrollToPhase(p.phase)"
+                    :aria-label="p.title + ': ' + p.finished + ' of ' + p.total + (p.errors ? ', ' + p.errors + ' errors' : '')"
+                    class="min-w-0 flex flex-col gap-8 text-left">
+                <span class="flex items-center justify-between gap-8">
+                    <span class="min-w-0 flex items-center gap-8" :class="stateClass(p.state)">
+                        {{ ui.activity_dot("p.state === 'running'") }}
+                        <span class="truncate" x-text="p.short"></span>
                     </span>
-                    <span class="block h-4 bg-line">
-                        <span class="block h-4 bg-fg transition-[width] duration-200 ease-out motion-reduce:transition-none"
-                              :style="'width:' + p.pct + '%'"></span>
+                    <span class="shrink-0 text-fg-muted">
+                        <span x-text="p.side"></span><span
+                              x-show="p.errors" class="text-warn" x-text="(p.side ? ' · ' : '') + p.errors + ' err'"></span>
                     </span>
-                </button>
-            </template>
-        </div>
+                </span>
+                <span class="block h-4 bg-line">
+                    <span class="block h-4 bg-fg transition-[width] duration-200 ease-out motion-reduce:transition-none"
+                          :style="'width:' + p.pct + '%'"></span>
+                </span>
+            </button>
+        </template>
     </div>
 
     {{ ui.warn_notice("run.status === 'error'", "run.error",
@@ -173,22 +158,38 @@
 
     <template x-for="g in phaseGroups" :key="g.phase">
         <div class="flex flex-col scroll-mt-33" :id="'phase-' + g.phase">
-            {{ ui.section_label(text_expr="g.title") }}
-            <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
-                <div>
-                    {{ ui.status_row("s.state", "s.label", "rowMeta(s)", title_expr="s.model") }}
-                    {# load notice: announced once through the page live region #}
-                    <div x-show="showLoadNotice(s)" x-cloak class="pl-87 py-10 border-b border-line">
-                        <div class="bg-surface border border-line p-15 flex flex-col gap-8">
-                            <div class="flex items-center gap-8">
-                                {{ ui.activity_dot() }}
-                                the model may still be loading — this is normal
+            {# group header: a finished phase folds into this line #}
+            <div class="flex justify-between items-center gap-15 pb-8 border-b border-line text-fg-muted">
+                <span x-text="g.title"></span>
+                <span x-show="phaseOf(g.phase).state === 'done'" class="flex items-center gap-15">
+                    <span>
+                        <span x-text="phaseOf(g.phase).side"></span><span
+                              x-show="phaseOf(g.phase).errors" class="text-warn"
+                              x-text="(phaseOf(g.phase).side ? ' · ' : '') + phaseOf(g.phase).errors + ' err'"></span>
+                    </span>
+                    <button type="button" @click="togglePhase(g.phase)"
+                            :aria-expanded="!isCollapsed(g.phase)" :aria-controls="'rows-' + g.phase"
+                            class="hover:text-fg" x-text="isCollapsed(g.phase) ? 'show' : 'hide'"></button>
+                </span>
+            </div>
+
+            <div :id="'rows-' + g.phase" x-show="!isCollapsed(g.phase)">
+                <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
+                    <div>
+                        {{ ui.status_row("s.state", "s.label", "rowMeta(s)", title_expr="s.model") }}
+                        {# load notice: announced once through the page live region #}
+                        <div x-show="showLoadNotice(s)" x-cloak class="pl-87 py-10 border-b border-line">
+                            <div class="bg-surface border border-line p-15 flex flex-col gap-8">
+                                <div class="flex items-center gap-8">
+                                    {{ ui.activity_dot() }}
+                                    the model may still be loading — this is normal
+                                </div>
+                                <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
                             </div>
-                            <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
                         </div>
                     </div>
-                </div>
-            </template>
+                </template>
+            </div>
         </div>
     </template>
 </div>
@@ -270,8 +271,16 @@
                                 <div class="text-heading-sm" x-text="m.median"></div>
                                 <div x-text="m.passRate"></div>
                                 <template x-for="(c, ci) in m.cells" :key="ci">
-                                    <div :class="c.warn ? 'text-warn' : (c.muted ? 'text-fg-muted' : 'text-fg')"
-                                         x-text="c.text" :title="c.title"></div>
+                                    <div class="flex flex-col gap-4" :title="c.title">
+                                        <span :class="c.warn ? 'text-warn' : (c.muted ? 'text-fg-muted' : 'text-fg')"
+                                              x-text="c.text"></span>
+                                        {# monochrome bar: length = score, no colour scale #}
+                                        <span class="block h-2 bg-line" aria-hidden="true">
+                                            <span x-show="c.bar != null" class="block h-2"
+                                                  :class="c.muted ? 'bg-fg-muted' : 'bg-fg'"
+                                                  :style="'width:' + c.bar + '%'"></span>
+                                        </span>
+                                    </div>
                                 </template>
                                 <div class="text-fg-muted" x-text="m.tps"></div>
                                 <div class="text-fg-muted" x-text="m.time"></div>
@@ -330,6 +339,23 @@
                                 <article class="border border-line p-22">
                                     {{ ui.card_head("q.label", "q.metricsLine") }}
                                     <div class="py-15 border-b border-line text-fg-muted" x-text="q.question"></div>
+                                    {# score scale: one tick per score, a tall tick = several models #}
+                                    <div x-show="q.marks.length" class="py-15 border-b border-line flex flex-col gap-8">
+                                        <div class="relative h-15" aria-hidden="true">
+                                            <span class="absolute inset-x-0 top-1/2 h-px bg-line"></span>
+                                            <template x-for="mk in q.marks" :key="mk.score">
+                                                <span class="absolute inset-y-0 w-9 -translate-x-1/2 flex items-center justify-center"
+                                                      :style="'left:' + mk.score + '%'" :title="mk.title">
+                                                    <span class="w-px bg-fg" :class="mk.many ? 'h-15' : 'h-9'"></span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                        <div class="flex justify-between gap-15 text-fg-muted">
+                                            <span>0</span>
+                                            <span x-text="q.spread"></span>
+                                            <span>100</span>
+                                        </div>
+                                    </div>
                                     <template x-for="e in q.entries" :key="e.model">
                                         {{ ui.eval_block("e.short", "e.rankText", head_title="e.model") }}
                                     </template>

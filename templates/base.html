@@ -11,12 +11,13 @@
     {% include "_theme.html" %}
 </head>
 {# tabular-nums: timers, counters and matrix columns keep their width. #}
-<body x-data="lmao" class="h-screen flex flex-col overflow-hidden bg-bg text-fg font-sans font-light text-caption tabular-nums">
+<body x-data="lmao" @keydown.window="hotkey($event)"
+      class="h-screen flex flex-col overflow-hidden bg-bg text-fg font-sans font-light text-caption tabular-nums">
 
     {# Three columns 1fr / auto / 1fr: the status sits in the true centre. #}
     <header class="h-66 shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-22 px-22 border-b border-line">
         <div class="min-w-0 flex items-center gap-33">
-            {{ ui.nav_toggle("setupOpen", "setup", "setup", "left") }}
+            {{ ui.nav_toggle("setupOpen", "setup", "setup", "left", key="[") }}
             <button type="button" @click="goHome()" title="back to the first screen"
                     class="group min-w-0 flex items-center gap-15 text-left">
                 <span class="text-heading-sm">lmao</span>
@@ -32,7 +33,7 @@
         </div>
 
         <div class="justify-self-end">
-            {{ ui.nav_toggle("archiveOpen", "archive", "archive", "right") }}
+            {{ ui.nav_toggle("archiveOpen", "archive", "archive", "right", key="]") }}
         </div>
     </header>
 

@@ -275,7 +275,7 @@
                                 </div>
                                 <template x-for="m in report.models" :key="m.model">
                                     <div class="grid items-center gap-x-15 py-12 border-b border-line tabular-nums" :style="report.grid">
-                                        <div class="sticky left-0 bg-bg pr-15 break-words normal-nums" x-text="m.short" :title="m.model"></div>
+                                        <div class="sticky left-0 self-stretch flex items-center bg-bg pr-15 break-words normal-nums" x-text="m.short" :title="m.model"></div>
                                         <div class="text-heading-sm" x-text="m.mean"></div>
                                         <div x-text="m.passRate"></div>
                                         <template x-for="(c, ci) in m.cells" :key="ci">

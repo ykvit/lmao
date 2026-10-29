@@ -462,7 +462,7 @@ function buildDistribution(results) {
     return { n, rows };
 }
 
-// --- chart: median score against median t/s ------------------------------
+// --- chart: mean score against median t/s --------------------------------
 
 function median(values) {
     const sorted = [...values].sort((a, b) => a - b);
@@ -491,7 +491,7 @@ function buildChart(summaryModels, display, recommended) {
     const points = [];
     const missing = [];
     summaryModels.forEach((stats) => {
-        const score = clampScore(stats.median);
+        const score = clampScore(stats.mean);
         const tps =
             typeof stats.median_tps === "number" && isFinite(stats.median_tps) && stats.median_tps >= 0
                 ? stats.median_tps
@@ -525,7 +525,7 @@ function buildChart(summaryModels, display, recommended) {
         p.top = 100 - p.score;
         p.flip = p.left > 70; // label on the left near the right edge
         p.leading = p.tps >= midTps && p.score >= midScore;
-        p.title = `${p.short}: score ${p.score} · ${round1(p.tps)} t/s`;
+        p.title = `${p.short}: mean score ${p.score} · ${round1(p.tps)} t/s`;
     });
 
     // Walk from the fastest; a point is on the front when it beats every faster one.
@@ -555,7 +555,7 @@ function buildChart(summaryModels, display, recommended) {
             tpsText: `median ${round1(midTps)} t/s`,
             scoreText: `median ${round1(midScore)}`,
         },
-        label: `median score against t/s, ${points.length} models. faster and better than the median: ${
+        label: `mean score against median t/s, ${points.length} models. faster and better than the median: ${
             leading.length ? leading.join(", ") : "none"
         }.`,
     };
@@ -590,10 +590,10 @@ function verdictFigures(summaryModels, model) {
     };
     return [
         {
-            label: "median score",
-            value: num(s.median),
+            label: "mean score",
+            value: num(s.mean),
             unit: "/ 100",
-            caption: caption(rankOf(summaryModels, model, "median", true), num),
+            caption: caption(rankOf(summaryModels, model, "mean", true), num),
         },
         {
             label: "pass rate",
@@ -695,7 +695,7 @@ function buildReport(data) {
         return {
             model: stats.model,
             short: display(stats.model),
-            median: fmtNum(stats.median),
+            mean: fmtNum(stats.mean),
             passRate: pass,
             tps: fmtNum(stats.median_tps),
             time: fmtNum(stats.median_time_sec),
@@ -703,6 +703,7 @@ function buildReport(data) {
             entries,
             distribution: buildDistribution(results),
             metricsLine: [
+                `mean ${fmtNum(stats.mean)}`,
                 `median ${fmtNum(stats.median)}`,
                 `pass ${pass}`,
                 `fails ${fmtNum(stats.fails)}`,

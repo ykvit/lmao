@@ -70,6 +70,19 @@ def test_summarize_counts_buckets_median_and_pass_rate():
     assert result["critical_fails"] == 1
 
 
+def test_summarize_reports_the_mean_next_to_the_median():
+    result = summarize_model("m", _scored(90, 80, 100, 20))
+
+    assert result["mean"] == 72.5
+    assert result["median"] == 85
+
+
+def test_generation_error_pulls_the_mean_down():
+    entries = [_entry(score=90), _entry(status=STATUS_GENERATION_ERROR, score=None)]
+
+    assert summarize_model("m", entries)["mean"] == 45
+
+
 @pytest.mark.parametrize(
     "score, pass_rate, fails, critical",
     [(70, 1.0, 0, 0), (69, 0.0, 1, 0), (40, 0.0, 1, 0), (39, 0.0, 0, 1)],
@@ -165,6 +178,7 @@ def test_summarize_without_entries_has_no_numbers():
     result = summarize_model("m", [])
 
     assert result["n"] == 0
+    assert result["mean"] is None
     assert result["median"] is None
     assert result["pass_rate"] is None
     assert result["median_tps"] is None

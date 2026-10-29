@@ -199,6 +199,56 @@ function evalEntry(question, result, index) {
     };
 }
 
+// Competition ranking (1, 1, 3): equal scores share a rank, null (failed) is not ranked.
+function competitionRanks(scores) {
+    return scores.map((score) =>
+        score === null ? null : 1 + scores.filter((other) => other !== null && other > score).length,
+    );
+}
+
+function pad2digits(number) {
+    return String(number).padStart(2, "0");
+}
+
+// One card per question: the answers of all models, best first, failed ones last.
+function buildQuestionCard(question, summaryModels) {
+    const rows = [];
+    summaryModels.forEach((stats, order) => {
+        const result = (question.results || []).find((r) => r.model_name === stats.model);
+        if (result) rows.push({ stats, result, order });
+    });
+
+    const failed = (result) =>
+        result.status === "generation_error" || result.status === "judge_error";
+    const ranks = competitionRanks(rows.map(({ result }) => (failed(result) ? null : result.score)));
+
+    const entries = rows.map(({ stats, result, order }, i) => ({
+        ...evalEntry(question, result, order),
+        model: stats.model,
+        short: shortName(stats.model),
+        rank: ranks[i],
+        rankText:
+            ranks[i] === null
+                ? "not ranked"
+                : `rank ${pad2digits(ranks[i])} / ${pad2digits(rows.length)}`,
+        order,
+    }));
+    entries.sort(
+        (a, b) =>
+            (a.rank === null) - (b.rank === null) || (a.rank ?? 0) - (b.rank ?? 0) || a.order - b.order,
+    );
+
+    const source = question.reference.source === "none" ? "no reference" : `${question.reference.source} reference`;
+    const tag = question.tag && question.tag.toLowerCase() !== question.id ? ` · ${question.tag}` : "";
+    return {
+        id: question.id,
+        label: `${question.id}${tag}`,
+        question: question.question,
+        metricsLine: `${rows.length} models · ${source}`,
+        entries,
+    };
+}
+
 // Everything the results screen shows, computed once per opened run.
 function buildReport(data) {
     const questions = data.questions_results || [];
@@ -280,6 +330,7 @@ function buildReport(data) {
         grid: `grid-template-columns:minmax(160px,1fr) 64px 64px repeat(${questions.length},48px) 64px 64px`,
         questionHeads: questions.map((q) => ({ id: q.id, title: q.tag || "" })),
         models,
+        questionCards: questions.map((q) => buildQuestionCard(q, summary.models)),
         references: questions.map((q) => ({
             id: q.id,
             title: `${q.id} · ${q.tag || "–"} · ${q.reference.source}`,

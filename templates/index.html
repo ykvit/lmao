@@ -297,37 +297,98 @@
                 <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, not in the median</div>
             </section>
 
-            {# model cards #}
+            {# view: per model / per question #}
             <section class="flex flex-col gap-22">
-                <div class="pb-8 border-b border-line text-fg-muted">03 per model</div>
-                <template x-for="m in report.models" :key="m.model">
-                    {# card #}
-                    <article class="border border-line p-22">
-                        <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
-                            <div class="text-subheading min-w-0 break-words" x-text="m.short" :title="m.model"></div>
-                            <div class="text-fg-muted" x-text="m.metricsLine"></div>
-                        </div>
-                        <template x-for="e in m.entries" :key="e.qid">
-                            {# eval block #}
-                            <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
-                                <div class="w-120 shrink-0">
-                                    <div class="text-fg-muted" x-text="e.label"></div>
-                                    <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
-                                    <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
-                                    <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
-                                </div>
-                                <div class="flex-1 min-w-0 flex flex-col gap-12">
-                                    <div class="text-fg-muted" x-text="e.question"></div>
-                                    <template x-for="(n, ni) in e.notes" :key="ni">
-                                        <div class="text-fg-muted" x-text="n"></div>
+                <div class="flex justify-between items-center pb-8 border-b border-line">
+                    <div class="text-fg-muted">03 view</div>
+                    {# view-tab #}
+                    <div class="flex" role="tablist" aria-label="results view">
+                        <button type="button" role="tab" id="tab-model"
+                                :aria-selected="resultsView === 'model'" aria-controls="results-panel"
+                                @click="resultsView = 'model'"
+                                class="px-15 py-9 border"
+                                :class="resultsView === 'model' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted'">per model</button>
+                        <button type="button" role="tab" id="tab-question"
+                                :aria-selected="resultsView === 'question'" aria-controls="results-panel"
+                                @click="resultsView = 'question'"
+                                class="px-15 py-9 border"
+                                :class="resultsView === 'question' ? 'bg-fg text-bg border-fg' : 'border-line text-fg-muted'">per question</button>
+                    </div>
+                </div>
+
+                <div id="results-panel" role="tabpanel"
+                     :aria-labelledby="resultsView === 'model' ? 'tab-model' : 'tab-question'"
+                     class="flex flex-col gap-22">
+
+                    {# per model #}
+                    <template x-if="resultsView === 'model'">
+                        <div class="flex flex-col gap-22">
+                            <template x-for="m in report.models" :key="m.model">
+                                {# card #}
+                                <article class="border border-line p-22">
+                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
+                                        <div class="text-subheading min-w-0 break-words" x-text="m.short" :title="m.model"></div>
+                                        <div class="text-fg-muted" x-text="m.metricsLine"></div>
+                                    </div>
+                                    <template x-for="e in m.entries" :key="e.qid">
+                                        {# eval block #}
+                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+                                            <div class="w-120 shrink-0">
+                                                <div class="text-fg-muted" x-text="e.label"></div>
+                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
+                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
+                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
+                                            </div>
+                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
+                                                <div class="text-fg-muted" x-text="e.question"></div>
+                                                <template x-for="(n, ni) in e.notes" :key="ni">
+                                                    <div class="text-fg-muted" x-text="n"></div>
+                                                </template>
+                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
+                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
+                                            </div>
+                                        </div>
                                     </template>
-                                    <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
-                                    <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
-                                </div>
-                            </div>
-                        </template>
-                    </article>
-                </template>
+                                </article>
+                            </template>
+                        </div>
+                    </template>
+
+                    {# per question #}
+                    <template x-if="resultsView === 'question'">
+                        <div class="flex flex-col gap-22">
+                            <template x-for="q in report.questionCards" :key="q.id">
+                                {# card #}
+                                <article class="border border-line p-22">
+                                    <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">
+                                        <div class="text-subheading min-w-0 break-words" x-text="q.label"></div>
+                                        <div class="text-fg-muted" x-text="q.metricsLine"></div>
+                                    </div>
+                                    <div class="py-15 border-b border-line text-fg-muted" x-text="q.question"></div>
+                                    <template x-for="e in q.entries" :key="e.model">
+                                        {# eval block #}
+                                        <div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+                                            <div class="w-120 shrink-0">
+                                                <div class="text-fg-muted break-words" x-text="e.short" :title="e.model"></div>
+                                                <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>
+                                                <div :class="e.error ? 'text-warn' : 'text-fg-muted'" x-text="e.caption"></div>
+                                                <div class="text-fg-muted" x-show="e.category" x-text="e.category"></div>
+                                            </div>
+                                            <div class="flex-1 min-w-0 flex flex-col gap-12">
+                                                <div class="text-fg-muted" x-text="e.rankText"></div>
+                                                <template x-for="(n, ni) in e.notes" :key="ni">
+                                                    <div class="text-fg-muted" x-text="n"></div>
+                                                </template>
+                                                <div :class="e.error && 'text-warn'" x-text="e.comment"></div>
+                                                <pre x-show="e.answer" class="bg-surface border border-line p-15 font-mono text-caption font-light whitespace-pre-wrap break-words" x-text="e.answer"></pre>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </article>
+                            </template>
+                        </div>
+                    </template>
+                </div>
             </section>
 
             {# references #}

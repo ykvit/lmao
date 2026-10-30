@@ -6,12 +6,12 @@ changelog:
     - title: Security
       labels:
         - security
-    - title: Fixed
-      labels:
-        - bug
     - title: Added
       labels:
         - enhancement
+    - title: Fixed
+      labels:
+        - bug
     - title: Documentation
       labels:
         - documentation

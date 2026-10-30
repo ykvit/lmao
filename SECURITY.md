@@ -47,10 +47,15 @@ output as text, never as HTML.
   scheduled scans cover the published image.
 - CodeQL analysis runs on pushes and pull requests (default setup), in
   addition to the SARIF scanners.
-- Release images are attested with build provenance (`mode=max`).
+- Release images are attested with build provenance; attestations live in
+  the GitHub Attestations API only (no referrer manifests in GHCR). Anyone
+  can verify a published image:
+  `gh attestation verify oci://ghcr.io/ykvit/lmao:latest --repo ykvit/lmao`
+- Releases are immutable: once published, their assets and tags cannot be
+  modified or deleted.
 - Dependabot alerts, security updates and grouped version updates are
   enabled: weekly for the runtime group, monthly for CI tooling.
 - Secret scanning and push protection are enabled.
-- `main` and `v*` tags are protected by rulesets: pull requests with one
-  approval, required CI checks, squash-only merges with linear history,
-  no force pushes and no tag deletion.
+- `main` and `v*` tags are protected by rulesets: pull requests with
+  required CI checks, squash-only merges with linear history, no direct
+  pushes, no force pushes and no tag deletion.

@@ -320,7 +320,7 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 
 ## Decisions made while porting
 
-- **Files.** `templates/_theme.html`, `base.html`, `index.html`, `_components.html`; `static/js/lmao.js` (Alpine state, SSE, requests) and `static/js/lib.js` (pure helpers: `shortName`, `shortNames`, `buildSteps`, `parseMarkdown`, `buildReport`, `buildChart`, `competitionRanks`, `sortHistory`; no DOM, can be unit-tested later).
+- **Files.** `templates/_theme.html`, `base.html`, `index.html`, `_components.html`; `static/js/lmao.js` (Alpine state, SSE, requests) and `static/js/lib.js` (pure helpers: `shortName`, `shortNames`, `buildSteps`, `parseMarkdown`, `buildReport`, `buildChart`, `competitionRanks`, `sortHistory`; no DOM, tested with `node --test` in `tests/js/`).
 - **Components.** One Jinja macro per Figma component in `_components.html`: `activity_dot`, `section_label`, `md_inline`, `md`, `answer_box`, `warn_notice`, `field`, `checkbox_row`, `status_row`, `card_head`, `eval_block`, `nav_toggle`, `tabs`.
 - **Short names.** `shortNames()` builds one map per model set. Colliding short names get the quantisation (`foo · Q4_K_M`), otherwise the full name. The full name stays in `title` attributes and in the archive meta.
 - **Matrix.** Per-question scores, mean, pass rate, t/s and time. median / fails / critical / errors / judge errors live in the model card header. Scores have no colour scale.
@@ -331,7 +331,7 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 - **Per question view.** Ranks use competition ranking (1, 1, 3); failed answers are `not ranked` and listed last. The denominator is the number of models in the question. Truncated answers are ranked by their score and keep the `*`.
 - **Additions without a Figma frame.** `collapse` in an expanded test case, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, comparison chart and matrix bars, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
 - **Interaction states.** Global `:focus-visible` outline (1px `fg`, offset 2px); hover: archive item `bg-bg`, nav toggles, wordmark subtitle and inactive tabs `text-fg`; primary `bg-fg-muted`, secondary `border-fg`, warn buttons `bg-line`.
-- **Not in this PR.** `cancel run` (needs an endpoint: flag in `TASKS`, check between steps in both `_run_local` and `_run_cloud`, `unload` in `finally`), light theme, responsive overlays, SSE reconnect, JS tests (idea: run `buildReport` over `history/` in Node from CI), vendoring Tailwind / Alpine / fonts (see the CDN note below).
+- **Not in this PR.** `cancel run` (needs an endpoint: flag in `TASKS`, check between steps in both `_run_local` and `_run_cloud`, `unload` in `finally`), light theme, responsive overlays, SSE reconnect, vendoring Tailwind / Alpine / fonts (see the CDN note below).
 
 ### CDN
 Tailwind browser build, Alpine and the fonts load from pinned CDN URLs without SRI. Offline machines get an unstyled page. Planned follow-up: vendor them into `static/vendor/` with pinned versions and sha256, or at least add `integrity` and `crossorigin`.

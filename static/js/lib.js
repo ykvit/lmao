@@ -1,4 +1,4 @@
-// Pure helpers. No DOM, no Alpine, so they can be unit-tested later.
+// Pure helpers. No DOM, no Alpine: tested with `node --test` (tests/js/).
 
 // 'hf.co/openbmb/MiniCPM5-2B-GGUF:Q4_K_M' -> 'openbmb/MiniCPM5-2B'
 // The full name stays in `title` attributes and in the archive meta.
@@ -753,5 +753,44 @@ function buildReport(data) {
                 blocks: parseMarkdown(ref.text || ""),
             };
         }),
+    };
+}
+
+// Lets `node --test` load this file. In the browser `module` does not exist
+// and the functions above stay plain globals.
+if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+        ReportFormatError,
+        answerBlocks,
+        buildChart,
+        buildDistribution,
+        buildReport,
+        buildSteps,
+        clampScore,
+        competitionRanks,
+        fmtClock,
+        fmtNum,
+        fmtSeconds,
+        fmtSpan,
+        isFailed,
+        loadGroup,
+        matrixCell,
+        median,
+        niceStep,
+        pad2,
+        parseInline,
+        parseMarkdown,
+        questionLabel,
+        rankOf,
+        round1,
+        runTime,
+        shortName,
+        shortNames,
+        shortenNames,
+        sortHistory,
+        stepKey,
+        totalSteps,
+        variantOf,
+        verdictFigures,
     };
 }

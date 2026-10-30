@@ -63,6 +63,8 @@ activity (Dependabot merges do not count). Re-enable it in the Actions tab.
 ## Rules of the repository
 
 - Tests: coverage must stay at or above `fail_under` in `pyproject.toml`.
+- JS tests: `static/js/lib.js` holds the pure helpers; cover new ones in
+  `tests/js/` (`make test-js`). Keep the DOM and Alpine out of `lib.js`.
 - Python version: the `Dockerfile` `FROM python:` line and `requires-python`
   change together (`make check-python` verifies it).
 - Makefile recipes start with exactly one tab.

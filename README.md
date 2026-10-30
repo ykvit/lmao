@@ -53,6 +53,7 @@ Results are saved in `./history` (dev) or the `history_data` Docker volume (prod
 ```bash
 make dev                              # hot reload on http://localhost:5000
 make test                             # tests with coverage
+make test-js                          # JavaScript tests (node --test)
 GH_TOKEN="$(gh auth token)" make ci   # everything GitHub CI runs
 ```
 

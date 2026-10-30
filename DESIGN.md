@@ -204,6 +204,7 @@ Under every score: an `h-2 bg-line` track with a `bg-fg` bar of `score%` (`bg-fg
 - Quadrant "faster and better than the median": `bg-surface`, bounded by dashed median lines. The bound is relative (medians of this run): there is no absolute threshold on the client.
 - Median labels sit inside the plot next to their line (flipped near the right edge / the top), so nothing sticks out of the box.
 - Points: 8px squares, `bg-fg` = recommended, `border-fg` = others. The label is right of the point (left near the right edge); `text-fg` inside the quadrant, otherwise muted.
+- Legend: one wrapping row under the plot with four entries: recommended, model (mean score, median t/s), faster and better than the median, Pareto line.
 - Models without a mean score or t/s are listed below as "not plotted".
 - The plot has `role="img"` with a text summary; the table tab carries the same data.
 
@@ -296,7 +297,9 @@ Every event except `info`, `completed` and `error` carries `phase`, `model`, `qu
 
 Progress comes from `event.progress` (`total = Q*(1+2M)+1`, M = unique candidates). In cloud mode several judge rows can be `running` at once. Close the `EventSource` on the first `onerror`: it would reconnect and replay the stream from the start.
 
-Durations are computed from event `timestamp` fields (ISO) without backend changes. A `*_done` without a start (or with a broken timestamp) gets no duration. A duplicate `*_start` does not reset a running row; a finished row ignores later events.
+While no event is due, the stream sends a `: ping` comment line every 15 s (`HEARTBEAT_SEC` in `app.py`). `EventSource` ignores comments, so the client needs no handling. The writes make a closed connection fail, which frees its gunicorn thread instead of holding it until the run ends.
+
+Durations are computed from event `timestamp` fields (ISO) without backend changes.A `*_done` without a start (or with a broken timestamp) gets no duration. A duplicate `*_start` does not reset a running row; a finished row ignores later events.
 
 ## Gaps between design and current backend
 

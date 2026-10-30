@@ -607,8 +607,8 @@ def test_summary_prompt_receives_python_aggregates():
     run(EvaluationPipeline(ollama))
 
     [call] = ollama.summary_calls
-    assert "cand-a: graded=1, median=80" in call["prompt"]
-    assert "Recommended model: cand-a" in call["prompt"]
+    assert '"cand-a": graded=1, mean=80.0, median=80' in call["prompt"]
+    assert 'Recommended model: "cand-a"' in call["prompt"]
 
 
 def test_failed_summary_is_stored_as_message():

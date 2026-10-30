@@ -50,6 +50,8 @@ opens the release PR (label `release`, template
 `.github/PULL_REQUEST_TEMPLATE/release.md`). Merging that PR releases the
 version, so never mix it with other changes. Dependabot merges do not create
 releases; bump PRs are excluded from changelogs by the `release` label.
+Run it from a clean `main` that matches `origin/main`: the script refuses
+otherwise.
 
 Prereleases: `make bump PART="patch rc"` (`1.2.3rc1` is released as
 `v1.2.3-rc.1`); `make bump PART=stable` makes the final version.

@@ -8,6 +8,8 @@ touches a real Ollama or the real ``history/`` folder.
 
 import json
 import re
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -315,6 +317,23 @@ def test_stream_stops_on_error_event(client):
     response = client.get("/api/stream/t2")
 
     assert _parse_sse(response) == [{"type": "error", "message": "boom"}]
+
+
+def test_stream_sends_heartbeats_while_waiting(client, monkeypatch):
+    monkeypatch.setattr(app_module, "HEARTBEAT_SEC", 0)
+    app_module.TASKS["t"] = {"status": "started", "events": []}
+
+    def finish():
+        time.sleep(0.2)
+        app_module.update_task_status("t", {"type": "completed", "message": "done"})
+
+    worker = threading.Thread(target=finish)
+    worker.start()
+    body = client.get("/api/stream/t").get_data(as_text=True)
+    worker.join()
+
+    assert ": ping" in body
+    assert '"type": "completed"' in body
 
 
 # --- /api/history -----------------------------------------------------------

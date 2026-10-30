@@ -62,7 +62,8 @@ function totalSteps(questionCount, candidateCount) {
 
 // All rows of a run in the `queued` state, built from the request payload.
 // `names` is the map from shortNames(); missing names fall back to shortName().
-function buildSteps(judge, candidates, questionCount, names = {}) {
+// `cloud` (payload.judge_cloud) picks the order of the grading rows.
+function buildSteps(judge, candidates, questionCount, names = {}, cloud = false) {
     const display = (m) => names[m] || shortName(m);
     const ids = Array.from({ length: questionCount }, (_, i) => `q${i + 1}`);
     const unique = [...new Set(candidates)];
@@ -86,12 +87,14 @@ function buildSteps(judge, candidates, questionCount, names = {}) {
     unique.forEach((m) =>
         ids.forEach((q) => steps.push(row("answer", m, q, `${display(m)} · ${q}`))),
     );
-    // Local mode grades question by question.
-    ids.forEach((q) =>
-        unique.forEach((m) =>
-            steps.push(row("grading", m, q, `judge · ${display(m)} · ${q}`)),
-        ),
-    );
+    // Grading rows follow the order the backend grades in. Display only: SSE
+    // events find their row by key. Local mode grades question by question
+    // (_run_local). A cloud judge grades every answer as soon as it is ready,
+    // and the candidates answer one after another, so it grades model by
+    // model (_run_cloud).
+    const grading = (m, q) => steps.push(row("grading", m, q, `judge · ${display(m)} · ${q}`));
+    if (cloud) unique.forEach((m) => ids.forEach((q) => grading(m, q)));
+    else ids.forEach((q) => unique.forEach((m) => grading(m, q)));
     steps.push(row("summary", judge, null, "final summary"));
     return steps;
 }

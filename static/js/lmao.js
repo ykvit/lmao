@@ -405,6 +405,7 @@ document.addEventListener("alpine:init", () => {
                 payload.candidates,
                 payload.test_cases.length,
                 this.names,
+                payload.judge_cloud,
             );
             const pos = {};
             steps.forEach((step, index) => (pos[step.key] = index));

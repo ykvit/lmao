@@ -60,7 +60,8 @@ test("totalSteps matches the backend formula", () => {
     assert.equal(lib.totalSteps(2, 3), 15);
 });
 
-test("buildSteps lists every row up front, once per unique candidate", () => {
+test("buildSteps lists every row up front, once per unique candidate (local judge)", () => {
+    // Default mode is local: grading rows go question by question.
     const steps = lib.buildSteps("j", ["a", "a", "b"], 2);
 
     assert.equal(steps.length, lib.totalSteps(2, 2));
@@ -85,6 +86,29 @@ test("buildSteps lists every row up front, once per unique candidate", () => {
     assert.equal(steps[2].label, "a · q1");
     assert.equal(steps[6].label, "judge · a · q1");
     assert.equal(steps[10].label, "final summary");
+});
+
+test("buildSteps orders grading rows per model for a cloud judge", () => {
+    const local = lib.buildSteps("j", ["a", "a", "b"], 2);
+    const cloud = lib.buildSteps("j", ["a", "a", "b"], 2, {}, true);
+    const keys = (steps, keep) => steps.filter((s) => keep(s.phase)).map((s) => s.key);
+
+    assert.deepEqual(keys(cloud, (p) => p === "grading"), [
+        "grading:a:q1",
+        "grading:a:q2",
+        "grading:b:q1",
+        "grading:b:q2",
+    ]);
+    // Only the grading order changes: the other rows and the set of keys stay.
+    assert.deepEqual(
+        keys(cloud, (p) => p !== "grading"),
+        keys(local, (p) => p !== "grading"),
+    );
+    assert.deepEqual(
+        cloud.map((s) => s.key).sort(),
+        local.map((s) => s.key).sort(),
+    );
+    assert.equal(cloud.find((s) => s.key === "grading:b:q1").label, "judge · b · q1");
 });
 
 test("buildSteps shows short names", () => {

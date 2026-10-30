@@ -18,6 +18,8 @@ Benchmark local LLMs with [Ollama](https://ollama.com): blind grading against a 
 [![ghcr.io](https://img.shields.io/badge/ghcr.io-ykvit%2Flmao-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/ykvit/lmao/pkgs/container/lmao)
 [![Ollama](https://img.shields.io/badge/llm%20runtime-Ollama-00b4d8?style=flat-square&logo=ollama&logoColor=black)](https://ollama.com)
 
+<img src="docs/assets/preview.png" alt="The results screen: the grading matrix, the comparison chart with medians and the recommendation">
+
 </div>
 
 ## How it works

@@ -261,7 +261,7 @@ def build_summary_prompt(models: list[dict], recommendation: dict) -> str:
     """Builds the prompt for the final text summary.
 
     Args:
-        models (list[dict]): Per-model aggregates with the keys model, n, median,
+       models (list[dict]): Per-model aggregates with the keys model, n, mean, median,
             pass_rate (fraction), fails, critical_fails, errors, judge_errors,
             median_tps and median_time_sec.
         recommendation (dict): The keys model (or None), rule and confidence.
@@ -270,10 +270,11 @@ def build_summary_prompt(models: list[dict], recommendation: dict) -> str:
         str: The prompt for the judge.
     """
     lines = [
-        f"- {m['model']}: graded={m['n']}, median={_number(m['median'])}, "
-        f"pass rate={_percent(m['pass_rate'])}, fails={m['fails']}, "
-        f"critical fails={m['critical_fails']}, errors={m['errors']}, "
-        f"judge errors={m['judge_errors']}, speed={_number(m['median_tps'])} t/s, "
+        f"- {m['model']}: graded={m['n']}, mean={_number(m['mean'])}, "
+        f"median={_number(m['median'])}, pass rate={_percent(m['pass_rate'])}, "
+        f"fails={m['fails']}, critical fails={m['critical_fails']}, "
+        f"errors={m['errors']}, judge errors={m['judge_errors']}, "
+        f"speed={_number(m['median_tps'])} t/s, "
         f"median time={_number(m['median_time_sec'])} s"
         for m in models
     ]

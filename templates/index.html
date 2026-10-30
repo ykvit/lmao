@@ -269,19 +269,28 @@
                                     <div>median</div>
                                     <div>pass</div>
                                     <template x-for="h in report.questionHeads" :key="h.id">
-                                        <div x-text="h.id" :title="h.title"></div>
+                                        <button type="button" @click="jumpTo(h.anchor, 'question')"
+                                                :aria-label="h.id + (h.title ? ' · ' + h.title : '') + ': show in per question view'"
+                                                class="text-left hover:text-fg" x-text="h.id" :title="h.title"></button>
                                     </template>
                                     <div>t/s</div>
                                     <div>time, s</div>
                                 </div>
                                 <template x-for="m in report.models" :key="m.model">
                                     <div class="grid items-center gap-x-15 py-12 border-b border-line tabular-nums" :style="report.grid">
-                                        <div class="sticky left-0 self-stretch flex items-center bg-bg pr-15 break-words normal-nums" x-text="m.short" :title="m.model"></div>
+                                        <div class="sticky left-0 self-stretch flex items-center bg-bg pr-15 normal-nums">
+                                            <button type="button" @click="jumpTo(m.anchor, 'model')"
+                                                    :aria-label="m.short + ': show in per model view'"
+                                                    class="min-w-0 text-left break-words hover:text-fg-muted"
+                                                    x-text="m.short" :title="m.model"></button>
+                                        </div>
                                         <div class="text-heading-sm" x-text="m.mean"></div>
                                         <div x-text="m.median"></div>
                                         <div x-text="m.passRate"></div>
                                         <template x-for="(c, ci) in m.cells" :key="ci">
-                                            <div class="flex flex-col gap-4" :title="c.title">
+                                            <button type="button" @click="jumpTo(c.anchor)" :disabled="!c.anchor"
+                                                    :aria-label="m.short + ' · ' + report.questionHeads[ci].id + ': ' + c.text + (c.anchor ? ', show answer' : '')"
+                                                    class="flex flex-col gap-4 text-left" :title="c.title">
                                                 <span :class="c.warn ? 'text-warn' : (c.muted ? 'text-fg-muted' : 'text-fg')"
                                                       x-text="c.text"></span>
                                                 <span class="block h-2 bg-line" aria-hidden="true">
@@ -289,7 +298,7 @@
                                                           :class="c.muted ? 'bg-fg-muted' : 'bg-fg'"
                                                           :style="'width:' + c.bar + '%'"></span>
                                                 </span>
-                                            </div>
+                                            </button>
                                         </template>
                                         <div class="text-fg-muted" x-text="m.tps"></div>
                                         <div class="text-fg-muted" x-text="m.time"></div>
@@ -392,7 +401,7 @@
                     <template x-if="resultsView === 'model'">
                         <div class="flex flex-col gap-22">
                             <template x-for="m in report.models" :key="m.model">
-                                <article class="border border-line p-22">
+                                <article :id="m.anchor" tabindex="-1" class="border border-line p-22 scroll-mt-33">
                                     {{ ui.card_head("m.short", "m.metricsLine", title_tip="m.model") }}
 
                                     {# answers by category #}
@@ -424,7 +433,7 @@
                     <template x-if="resultsView === 'question'">
                         <div class="flex flex-col gap-22">
                             <template x-for="q in report.questionCards" :key="q.id">
-                                <article class="border border-line p-22">
+                                <article :id="q.anchor" tabindex="-1" class="border border-line p-22 scroll-mt-33">
                                     {{ ui.card_head("q.label", "q.metricsLine") }}
                                     <div class="py-15 border-b border-line text-fg-muted" x-text="q.question"></div>
                                     {# score scale: one tick per score, a tall tick = several models #}

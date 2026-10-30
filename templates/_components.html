@@ -173,9 +173,11 @@
 </div>
 {%- endmacro %}
 
-{# Eval block. Expects the entry as `e` in scope (x-for="e in ..."). #}
-{% macro eval_block(head, first, head_title="") -%}
-<div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+{# Eval block. Expects the entry as `e` in scope (x-for="e in ..."). `anchor` is
+   the DOM id the comparison table jumps to; tabindex -1 lets it take the focus. #}
+{% macro eval_block(head, first, head_title="", anchor="e.anchor") -%}
+<div :id="{{ anchor }}" tabindex="-1" class="flex gap-33 py-22 scroll-mt-33"
+     :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
     <div class="w-120 shrink-0">
         <div class="text-fg-muted break-words" x-text="{{ head }}"{% if head_title %} :title="{{ head_title }}"{% endif %}></div>
         <div class="text-display font-thin" :class="e.error && 'text-warn'" x-text="e.scoreText"></div>

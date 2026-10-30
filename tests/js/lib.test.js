@@ -236,9 +236,9 @@ test("answerBlocks parses an answer once", () => {
 });
 
 test("shortenNames replaces the longest name first", () => {
-    const blocks = lib.parseMarkdown("a-long and a");
+    const blocks = lib.parseMarkdown("m-long and m");
 
-    lib.shortenNames(blocks, { a: "x", "a-long": "y" });
+    lib.shortenNames(blocks, { m: "x", "m-long": "y" });
 
     assert.equal(blocks[0].inlines[0].text, "y and x");
 });

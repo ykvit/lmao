@@ -532,12 +532,14 @@ test("buildReport: model rows", () => {
     const [a, b] = lib.buildReport(runFixture()).models;
 
     assert.equal(a.mean, "95");
+    assert.equal(a.median, "95");
     assert.equal(a.passRate, "100%");
     assert.equal(
         a.metricsLine,
         "mean 95 · median 95 · pass 100% · fails 0 · critical 0 · errors 0 · judge errors 0 · 50 t/s · 2.5 s total",
     );
     assert.equal(b.tps, "–");
+    assert.equal(b.median, "0");
     assert.equal(b.cells[0].text, "err");
     assert.equal(b.cells[0].warn, true);
     assert.equal(b.entries[0].error, true);
@@ -566,7 +568,7 @@ test("buildReport: table grid, heads, references and chart", () => {
 
     assert.equal(
         report.grid,
-        "grid-template-columns:minmax(160px,1fr) 64px 64px repeat(1,48px) 64px 64px",
+        "grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(1,48px) 64px 64px",
     );
     assert.deepEqual(report.questionHeads, [{ id: "q1", title: "logic" }]);
     assert.equal(report.references[0].title, "q1 · logic · generated");

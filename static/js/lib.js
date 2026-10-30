@@ -699,6 +699,7 @@ function buildReport(data) {
             model: stats.model,
             short: display(stats.model),
             mean: fmtNum(stats.mean),
+            median: fmtNum(stats.median),
             passRate: pass,
             tps: fmtNum(stats.median_tps),
             time: fmtNum(stats.median_time_sec),
@@ -741,8 +742,8 @@ function buildReport(data) {
         notes,
         summaryBlocks: shortenNames(parseMarkdown(summary.text, { bareFence: true }), names),
         chart: buildChart(summaryModels, display, rec.model),
-        // model | median | pass | one column per question | t/s | time
-        grid: `grid-template-columns:minmax(160px,1fr) 64px 64px repeat(${questions.length},48px) 64px 64px`,
+        // model | mean | median | pass | one column per question | t/s | time
+        grid: `grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(${questions.length},48px) 64px 64px`,
         questionHeads: questions.map((q) => ({ id: q.id, title: q.tag || "" })),
         models,
         questionCards: questions.map((q) => buildQuestionCard(q, summaryModels, display)),

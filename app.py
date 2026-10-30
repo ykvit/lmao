@@ -33,6 +33,10 @@ pipeline = EvaluationPipeline(ollama_client)
 _SAFE_TAG_RE = re.compile(r"[^a-zA-Z0-9_-]")
 _OPTIONAL_TEXT_FIELDS = ("tag", "specific_rationale", "reference")
 
+# An SSE stream that writes nothing never notices a closed connection, and
+# gunicorn has only a few threads. A comment line every few seconds fixes that.
+HEARTBEAT_SEC = 15
+
 
 def _sanitize_tag(tag, fallback="run", max_length=40):
     """Strip anything unsafe for a filesystem path segment."""
@@ -239,17 +243,24 @@ def stream_status(task_id: str):
             return
 
         idx = 0
+        last_sent = time.monotonic()
         while True:
             # Yield new events as they become available in the memory buffer.
             if idx < len(task["events"]):
                 event = task["events"][idx]
                 yield f"data: {json.dumps(event)}\n\n"
+                last_sent = time.monotonic()
 
                 # Stop streaming if the task has finished or failed.
                 if event.get("type") in ["completed", "error"]:
                     break
                 idx += 1
             else:
+                # A comment line: EventSource ignores it, but the write fails
+                # when the client is gone, which ends this generator.
+                if time.monotonic() - last_sent >= HEARTBEAT_SEC:
+                    yield ": ping\n\n"
+                    last_sent = time.monotonic()
                 # Sleep briefly to avoid CPU spinning while waiting for events.
                 time.sleep(0.5)
 

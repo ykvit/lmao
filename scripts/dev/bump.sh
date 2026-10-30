@@ -10,8 +10,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
 [[ "$branch" == "main" ]] || die "Run from main (current branch: $branch)."
-git diff --quiet || die "Unstaged changes in the working tree. Commit or stash first."
-git diff --cached --quiet || die "Staged changes in the working tree. Commit or stash first."
+[[ -z "$(git status --porcelain)" ]] \
+    || die "The working tree is not clean. Commit or stash first."
+
+git fetch --quiet origin main
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
+    || die "Local main is not at origin/main. Pull first."
 
 args=()
 for part in "$@"; do

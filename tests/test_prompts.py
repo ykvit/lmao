@@ -163,6 +163,7 @@ def _model(**overrides):
         "model": "cand-a",
         "n": 3,
         "median": 85,
+        "mean": 82.5,
         "pass_rate": 0.67,
         "fails": 1,
         "critical_fails": 0,
@@ -181,18 +182,18 @@ def test_summary_prompt_lists_models_and_recommendation():
 
     prompt = build_summary_prompt([_model()], recommendation)
 
-    assert "cand-a: graded=3, median=85, pass rate=67%" in prompt
+    assert "cand-a: graded=3, mean=82.5, median=85, pass rate=67%" in prompt
     assert "speed=42.5 t/s, median time=3.2 s" in prompt
     assert "Recommended model: cand-a" in prompt
     assert "rule: fastest_above_threshold" in prompt
 
 
 def test_summary_prompt_handles_missing_values_and_no_recommendation():
-    stats = _model(n=0, median=None, pass_rate=None, median_tps=None)
+    stats = _model(n=0, mean=None, median=None, pass_rate=None, median_tps=None)
     recommendation = {"model": None, "rule": "none_graded", "confidence": "low"}
 
     prompt = build_summary_prompt([stats], recommendation)
 
-    assert "median=n/a, pass rate=n/a" in prompt
+    assert "mean=n/a, median=n/a, pass rate=n/a" in prompt
     assert "speed=n/a t/s" in prompt
     assert "No model could be recommended" in prompt

@@ -15,27 +15,34 @@ VOID = {
 
 
 class _Balance(HTMLParser):
-    def __init__(self):
+    def __init__(self, lines):
         super().__init__()
-        self.stack = []
+        self.lines = lines
+        self.stack = []  # (tag, line it was opened on)
         self.errors = []
 
     def handle_starttag(self, tag, attrs):
         if tag not in VOID:
-            self.stack.append(tag)
+            self.stack.append((tag, self.getpos()[0]))
 
     def handle_endtag(self, tag):
         if tag in VOID:
             return
-        if not self.stack or self.stack[-1] != tag:
-            self.errors.append(f"unexpected </{tag}> at line {self.getpos()[0]}")
+        line = self.getpos()[0]
+        if not self.stack or self.stack[-1][0] != tag:
+            innermost = self.stack[-1] if self.stack else None
+            self.errors.append(
+                f"unexpected </{tag}> at line {line}: "
+                f"{self.lines[line - 1].strip()!r}; innermost open tag: {innermost}"
+            )
             return
         self.stack.pop()
 
 
 def test_index_html_tags_are_balanced(client):
-    parser = _Balance()
-    parser.feed(client.get("/").get_data(as_text=True))
+    html = client.get("/").get_data(as_text=True)
+    parser = _Balance(html.splitlines())
+    parser.feed(html)
     parser.close()
 
     assert parser.errors == []

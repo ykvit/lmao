@@ -1,0 +1,26 @@
+changelog:
+  exclude:
+    labels:
+      - release
+  categories:
+    - title: Security
+      labels:
+        - security
+    - title: Fixed
+      labels:
+        - bug
+    - title: Added
+      labels:
+        - enhancement
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: CI and tooling
+      labels:
+        - ci-tools
+    - title: Other changes
+      labels:
+        - "*"

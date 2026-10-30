@@ -44,9 +44,12 @@ Format: `<type>(<scope>): <summary>`, using [Conventional Commits](https://www.c
 
 ## Versions and releases
 
-Only change the version with `make bump PART=patch|minor|major`, in its own PR.
-Merging a version bump releases that version, so never mix it with other
-changes. Dependabot merges do not create releases.
+Only change the version with `make bump PART=patch minor|major`. The script
+commits `pyproject.toml` and `uv.lock` on a `chore/bump-X.Y.Z` branch and
+opens the release PR (label `release`, template
+`.github/PULL_REQUEST_TEMPLATE/release.md`). Merging that PR releases the
+version, so never mix it with other changes. Dependabot merges do not create
+releases; bump PRs are excluded from changelogs by the `release` label.
 
 Prereleases: `make bump PART="patch rc"` (`1.2.3rc1` is released as
 `v1.2.3-rc.1`); `make bump PART=stable` makes the final version.

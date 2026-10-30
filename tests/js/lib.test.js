@@ -47,6 +47,18 @@ test("pad2 is one-based", () => {
     assert.equal(lib.pad2(11), "12");
 });
 
+test("domId gives a stable, valid id and keeps similar names apart", () => {
+    const id = lib.domId("answer", "hf.co/o/m-GGUF:Q4_K_M", "q1");
+
+    assert.match(id, /^answer-hf-co-o-m-gguf-q4_k_m-q1-[0-9a-z]+$/);
+    assert.equal(lib.domId("answer", "hf.co/o/m-GGUF:Q4_K_M", "q1"), id);
+    // same slug, different raw parts
+    assert.notEqual(lib.domId("model", "a:b"), lib.domId("model", "a/b"));
+    assert.notEqual(lib.domId("answer", "a-b", "c"), lib.domId("answer", "a", "b-c"));
+    assert.notEqual(lib.domId("model", "q1"), lib.domId("question", "q1"));
+    assert.match(lib.domId("model", null), /^model-[0-9a-z]+$/);
+});
+
 // --- running screen -------------------------------------------------------
 
 test("stepKey has the same shape as the SSE fields", () => {
@@ -60,7 +72,8 @@ test("totalSteps matches the backend formula", () => {
     assert.equal(lib.totalSteps(2, 3), 15);
 });
 
-test("buildSteps lists every row up front, once per unique candidate", () => {
+test("buildSteps lists every row up front, once per unique candidate (local judge)", () => {
+    // Default mode is local: grading rows go question by question.
     const steps = lib.buildSteps("j", ["a", "a", "b"], 2);
 
     assert.equal(steps.length, lib.totalSteps(2, 2));
@@ -85,6 +98,29 @@ test("buildSteps lists every row up front, once per unique candidate", () => {
     assert.equal(steps[2].label, "a · q1");
     assert.equal(steps[6].label, "judge · a · q1");
     assert.equal(steps[10].label, "final summary");
+});
+
+test("buildSteps orders grading rows per model for a cloud judge", () => {
+    const local = lib.buildSteps("j", ["a", "a", "b"], 2);
+    const cloud = lib.buildSteps("j", ["a", "a", "b"], 2, {}, true);
+    const keys = (steps, keep) => steps.filter((s) => keep(s.phase)).map((s) => s.key);
+
+    assert.deepEqual(keys(cloud, (p) => p === "grading"), [
+        "grading:a:q1",
+        "grading:a:q2",
+        "grading:b:q1",
+        "grading:b:q2",
+    ]);
+    // Only the grading order changes: the other rows and the set of keys stay.
+    assert.deepEqual(
+        keys(cloud, (p) => p !== "grading"),
+        keys(local, (p) => p !== "grading"),
+    );
+    assert.deepEqual(
+        cloud.map((s) => s.key).sort(),
+        local.map((s) => s.key).sort(),
+    );
+    assert.equal(cloud.find((s) => s.key === "grading:b:q1").label, "judge · b · q1");
 });
 
 test("buildSteps shows short names", () => {
@@ -508,12 +544,14 @@ test("buildReport: model rows", () => {
     const [a, b] = lib.buildReport(runFixture()).models;
 
     assert.equal(a.mean, "95");
+    assert.equal(a.median, "95");
     assert.equal(a.passRate, "100%");
     assert.equal(
         a.metricsLine,
         "mean 95 · median 95 · pass 100% · fails 0 · critical 0 · errors 0 · judge errors 0 · 50 t/s · 2.5 s total",
     );
     assert.equal(b.tps, "–");
+    assert.equal(b.median, "0");
     assert.equal(b.cells[0].text, "err");
     assert.equal(b.cells[0].warn, true);
     assert.equal(b.entries[0].error, true);
@@ -542,12 +580,35 @@ test("buildReport: table grid, heads, references and chart", () => {
 
     assert.equal(
         report.grid,
-        "grid-template-columns:minmax(160px,1fr) 64px 64px repeat(1,48px) 64px 64px",
+        "grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(1,48px) 64px 64px",
     );
-    assert.deepEqual(report.questionHeads, [{ id: "q1", title: "logic" }]);
+    assert.deepEqual(report.questionHeads, [
+        { id: "q1", title: "logic", anchor: lib.domId("question", "q1") },
+    ]);
     assert.equal(report.references[0].title, "q1 · logic · generated");
     assert.equal(report.chart.points.length, 1);
     assert.deepEqual(report.chart.missing, ["b"]);
+});
+
+test("buildReport: anchors link the comparison table to the 03 cards", () => {
+    const report = lib.buildReport(runFixture());
+    const [a, b] = report.models;
+    const [card] = report.questionCards;
+    const answerA = lib.domId("answer", "a", "q1");
+
+    assert.equal(a.anchor, lib.domId("model", "a"));
+    assert.equal(card.anchor, report.questionHeads[0].anchor);
+    // a cell, its per-model block and its per-question block share one id
+    assert.equal(a.cells[0].anchor, answerA);
+    assert.equal(a.entries[0].anchor, answerA);
+    assert.equal(card.entries.find((e) => e.model === "a").anchor, answerA);
+    // a failed cell still points to its eval block
+    assert.equal(b.cells[0].anchor, lib.domId("answer", "b", "q1"));
+
+    // a model without a result for the question: nothing to jump to
+    const data = runFixture();
+    data.questions_results[0].results.pop();
+    assert.equal(lib.buildReport(data).models[1].cells[0].anchor, null);
 });
 
 test("buildReport: notes for a judge that is a candidate and for missing references", () => {

@@ -142,6 +142,7 @@ Select (inline in `index.html`): same box, native `<select class="appearance-non
 
 ### Test case block (setup)
 Expanded: `border border-line p-15 flex flex-col gap-12` with header row (`case 01` / `collapse` / `remove`). Collapsed: `border border-line px-15 py-12 flex items-center gap-15` (`case 02`, tag, `edit`).
+Field order: tag, question, reference answer, specific criteria (display only: the payload keys are named).
 
 ### Warn notice
 `ui.warn_notice(show, text, action, action_label)`: `border border-warn px-15 py-12 text-warn`, `role="alert"`, optional action button (`reload`, `back to setup`). Errors only.
@@ -196,8 +197,15 @@ Header `flex justify-between items-center pb-8 border-b border-line`: title left
 ### Comparison (`02 comparison`)
 Section header row: label on the left, `table` / `chart` tabs on the right.
 
-**Table.** Grid generated from the question count: `model | mean | pass | q1…qN | t/s | time, s`. Header cells `text-fg-muted`; mean `text-heading-sm`; t/s and time `text-fg-muted`. Cells: `err` (generation error, warn), `?` (judge error, warn), `*` (truncated), muted (question without a reference). Wide matrices scroll horizontally with a sticky model column (the cell stretches to the row height, so the score bars of scrolled columns do not show below it); `tabular-nums` on rows except the name column.
+**Table.** Grid generated from the question count: `model | mean | median | pass | q1…qN | t/s | time, s`. Header cells `text-fg-muted`; mean `text-heading-sm`; median and pass default text; t/s and time `text-fg-muted`. Cells: `err` (generation error, warn), `?` (judge error, warn), `*` (truncated), muted (question without a reference). Wide matrices scroll horizontally with a sticky model column (the cell stretches to the row height, so the score bars of scrolled columns do not show below it); `tabular-nums` on rows except the name column.
 Under every score: an `h-2 bg-line` track with a `bg-fg` bar of `score%` (`bg-fg-muted` for questions without a reference, empty for errors). Monochrome: rule 4 holds.
+
+**Navigation.** The model name, the q headers and the score cells are buttons (native keyboard, global focus outline, no new styles):
+- model name → its card in `per model` (switches the tab);
+- q header → its card in `per question` (switches the tab);
+- score cell → its eval block in the **active** view, no tab switch (both views hold every answer). `err` / `?` / muted cells point there too; a missing result (`–`) is a disabled button.
+
+`jumpTo(id, view)` sets `resultsView`, waits for `$nextTick` (both views are `x-if`), scrolls with `scrollIntoView` (instant with reduced motion) and focuses the target (`tabindex="-1"`, `scroll-mt-33`). Ids come from `domId()` in `lib.js`: a slug plus a FNV-1a hash, because model names contain `:` and `/`. An answer has the same id in both views; only one view is in the DOM.
 
 **Chart.** Mean score (y, fixed 0–100 so runs compare) against median t/s (x, linear, ticks 1/2/5 × 10ⁿ).
 - Plot box `h-320 border-l border-b border-line` inside gutters `pt-22 pr-22 pb-55 pl-44` (y ticks left, x ticks and `t/s` below). Everything is HTML positioned in %, labels stay 13px; the only SVG is the Pareto polyline (`vector-effect: non-scaling-stroke`, dashed `stroke-fg-muted`).
@@ -214,7 +222,7 @@ Verdict (label, short name `text-heading`, rule) → four key figures of the rec
 ### Eval block (model card and question card)
 `ui.eval_block(head, first)`; expects the entry as `e`.
 ```html
-<div class="flex gap-33 py-22" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
+<div :id="e.anchor" tabindex="-1" class="flex gap-33 py-22 scroll-mt-33" :class="e.error ? 'border border-warn px-22 my-15' : 'border-b border-line'">
   <div class="w-120 shrink-0">
     <div class="text-fg-muted">head</div>
     <div class="text-display font-thin" :class="e.error && 'text-warn'">score or err</div>
@@ -320,17 +328,17 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 
 ## Decisions made while porting
 
-- **Files.** `templates/_theme.html`, `base.html`, `index.html`, `_components.html`; `static/js/lmao.js` (Alpine state, SSE, requests) and `static/js/lib.js` (pure helpers: `shortName`, `shortNames`, `buildSteps`, `parseMarkdown`, `buildReport`, `buildChart`, `competitionRanks`, `sortHistory`; no DOM, tested with `node --test` in `tests/js/`).
+- **Files.** `templates/_theme.html`, `base.html`, `index.html`, `_components.html`; `static/js/lmao.js` (Alpine state, SSE, requests) and `static/js/lib.js` (pure helpers: `shortName`, `shortNames`, `buildSteps`, `parseMarkdown`, `buildReport`, `buildChart`, `competitionRanks`, `sortHistory`, `domId`; no DOM, tested with `node --test` in `tests/js/`).
 - **Components.** One Jinja macro per Figma component in `_components.html`: `activity_dot`, `section_label`, `md_inline`, `md`, `answer_box`, `warn_notice`, `field`, `checkbox_row`, `status_row`, `card_head`, `eval_block`, `nav_toggle`, `tabs`.
 - **Short names.** `shortNames()` builds one map per model set. Colliding short names get the quantisation (`foo · Q4_K_M`), otherwise the full name. The full name stays in `title` attributes and in the archive meta.
-- **Matrix.** Per-question scores, mean, pass rate, t/s and time. median / fails / critical / errors / judge errors live in the model card header. Scores have no colour scale.
+- **Matrix.** Per-question scores, mean, median, pass rate, t/s and time. fails / critical / errors / judge errors live in the model card header (median is shown in both). Scores have no colour scale.
 - **Judge summary.** Markdown is parsed into blocks and rendered with `x-text` (see "Markdown"); bold is shown with `text-fg` because only Inter 100 and 300 are loaded.
 - **Wording.** Questions without a reference: "excluded from the scores" everywhere.
-- **Running screen.** Rows are built up front as `queued` from the request payload and keyed `phase:model:question`. A failed answer marks its grading row `skipped` (the backend sends no event for it). Rows in flight when the stream breaks become `error` / `interrupted`. The stream is closed on the first `onerror` (no auto-reconnect: the backend replays from the start).
+- **Running screen.** Rows are built up front as `queued` from the request payload and keyed `phase:model:question`. Grading rows follow the backend order: question by question for a local judge (`_run_local`), model by model for a cloud judge (`_run_cloud`; `buildSteps(..., cloud)` from `judge_cloud`). The order is display only: events find their row by key. A failed answer marks its grading row `skipped` (the backend sends no event for it). Rows in flight when the stream breaks become `error` / `interrupted`. The stream is closed on the first `onerror` (no auto-reconnect: the backend replays from the start).
 - **Load notice.** Only on the first call of a model load group (first reference, first grading, first answer of each candidate), after ~8 s. No VRAM claims.
 - **Per question view.** Ranks use competition ranking (1, 1, 3); failed answers are `not ranked` and listed last. The denominator is the number of models in the question. Truncated answers are ranked by their score and keep the `*`.
-- **Additions without a Figma frame.** `collapse` in an expanded test case, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, comparison chart and matrix bars, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
-- **Interaction states.** Global `:focus-visible` outline (1px `fg`, offset 2px); hover: archive item `bg-bg`, nav toggles, wordmark subtitle and inactive tabs `text-fg`; primary `bg-fg-muted`, secondary `border-fg`, warn buttons `bg-line`.
+- **Additions without a Figma frame.** `collapse` in an expanded test case, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, comparison chart and matrix bars, matrix median column and navigation, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
+- **Interaction states.** Global `:focus-visible` outline (1px `fg`, offset 2px); hover: archive item `bg-bg`, nav toggles, wordmark subtitle, inactive tabs and matrix q headers `text-fg`; matrix model names `text-fg-muted`; primary `bg-fg-muted`, secondary `border-fg`, warn buttons `bg-line`.
 - **Not in this PR.** `cancel run` (needs an endpoint: flag in `TASKS`, check between steps in both `_run_local` and `_run_cloud`, `unload` in `finally`), light theme, responsive overlays, SSE reconnect, vendoring Tailwind / Alpine / fonts (see the CDN note below).
 
 ### CDN

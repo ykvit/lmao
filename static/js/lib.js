@@ -62,7 +62,8 @@ function totalSteps(questionCount, candidateCount) {
 
 // All rows of a run in the `queued` state, built from the request payload.
 // `names` is the map from shortNames(); missing names fall back to shortName().
-function buildSteps(judge, candidates, questionCount, names = {}) {
+// `cloud` (payload.judge_cloud) picks the order of the grading rows.
+function buildSteps(judge, candidates, questionCount, names = {}, cloud = false) {
     const display = (m) => names[m] || shortName(m);
     const ids = Array.from({ length: questionCount }, (_, i) => `q${i + 1}`);
     const unique = [...new Set(candidates)];
@@ -86,12 +87,14 @@ function buildSteps(judge, candidates, questionCount, names = {}) {
     unique.forEach((m) =>
         ids.forEach((q) => steps.push(row("answer", m, q, `${display(m)} · ${q}`))),
     );
-    // Local mode grades question by question.
-    ids.forEach((q) =>
-        unique.forEach((m) =>
-            steps.push(row("grading", m, q, `judge · ${display(m)} · ${q}`)),
-        ),
-    );
+    // Grading rows follow the order the backend grades in. Display only: SSE
+    // events find their row by key. Local mode grades question by question
+    // (_run_local). A cloud judge grades every answer as soon as it is ready,
+    // and the candidates answer one after another, so it grades model by
+    // model (_run_cloud).
+    const grading = (m, q) => steps.push(row("grading", m, q, `judge · ${display(m)} · ${q}`));
+    if (cloud) unique.forEach((m) => ids.forEach((q) => grading(m, q)));
+    else ids.forEach((q) => unique.forEach((m) => grading(m, q)));
     steps.push(row("summary", judge, null, "final summary"));
     return steps;
 }
@@ -121,6 +124,27 @@ function fmtClock(sec) {
 function fmtSpan(sec) {
     if (typeof sec !== "number" || !isFinite(sec) || sec < 0) return "";
     return sec < 60 ? `${sec.toFixed(1)} s` : fmtClock(sec);
+}
+
+// --- dom anchors ----------------------------------------------------------
+
+// Model names contain ':', '/' and '.', so they cannot be used as ids as is.
+// The id is a readable slug plus a FNV-1a hash of the raw parts, so names
+// with the same slug ('a:b' and 'a/b') still get different ids.
+// domId('answer', 'hf.co/o/m-GGUF:Q4_K_M', 'q1')
+//   -> 'answer-hf-co-o-m-gguf-q4_k_m-q1-<hash>'
+function domId(prefix, ...parts) {
+    const raw = parts.map((p) => String(p ?? "")).join("\n");
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < raw.length; i += 1) {
+        hash ^= raw.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    const slug = raw
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    return [prefix, slug, (hash >>> 0).toString(36)].filter(Boolean).join("-");
 }
 
 // --- results --------------------------------------------------------------
@@ -331,6 +355,7 @@ function evalEntry(question, result, index) {
 
     return {
         qid: question.id,
+        anchor: domId("answer", result.model_name, question.id),
         index,
         label: questionLabel(question),
         question: question.question || "",
@@ -405,6 +430,7 @@ function buildQuestionCard(question, summaryModels, display) {
     const source = (question.reference || {}).source || "none";
     return {
         id: question.id,
+        anchor: domId("question", question.id),
         label: questionLabel(question),
         question: question.question || "",
         metricsLine: `${rows.length} models · ${source === "none" ? "no reference" : `${source} reference`}`,
@@ -678,11 +704,14 @@ function buildReport(data) {
         questions.forEach((question, index) => {
             const result = (question.results || []).find((r) => r.model_name === stats.model);
             if (!result) {
-                cells.push({ text: "–", warn: false, muted: true, title: "", bar: null });
+                cells.push({ text: "–", warn: false, muted: true, title: "", bar: null, anchor: null });
                 return;
             }
             results.push(result);
-            cells.push(matrixCell(question, result));
+            cells.push({
+                ...matrixCell(question, result),
+                anchor: domId("answer", stats.model, question.id),
+            });
             entries.push(evalEntry(question, result, index));
         });
 
@@ -694,8 +723,10 @@ function buildReport(data) {
                 : null;
         return {
             model: stats.model,
+            anchor: domId("model", stats.model),
             short: display(stats.model),
             mean: fmtNum(stats.mean),
+            median: fmtNum(stats.median),
             passRate: pass,
             tps: fmtNum(stats.median_tps),
             time: fmtNum(stats.median_time_sec),
@@ -738,10 +769,13 @@ function buildReport(data) {
         notes,
         summaryBlocks: shortenNames(parseMarkdown(summary.text, { bareFence: true }), names),
         chart: buildChart(summaryModels, display, rec.model),
-        // model | median | pass | one column per question | t/s | time
-        grid: `grid-template-columns:minmax(160px,1fr) 64px 64px repeat(${questions.length},48px) 64px 64px`,
-        questionHeads: questions.map((q) => ({ id: q.id, title: q.tag || "" })),
-        models,
+        // model | mean | median | pass | one column per question | t/s | time
+        grid: `grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(${questions.length},48px) 64px 64px`,
+        questionHeads: questions.map((q) => ({
+            id: q.id,
+            title: q.tag || "",
+            anchor: domId("question", q.id),
+        })),        models,
         questionCards: questions.map((q) => buildQuestionCard(q, summaryModels, display)),
         references: questions.map((q) => {
             const ref = q.reference || {};
@@ -768,6 +802,7 @@ if (typeof module !== "undefined" && module.exports) {
         buildSteps,
         clampScore,
         competitionRanks,
+        domId,
         fmtClock,
         fmtNum,
         fmtSeconds,

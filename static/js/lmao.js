@@ -405,6 +405,7 @@ document.addEventListener("alpine:init", () => {
                 payload.candidates,
                 payload.test_cases.length,
                 this.names,
+                payload.judge_cloud,
             );
             const pos = {};
             steps.forEach((step, index) => (pos[step.key] = index));
@@ -603,6 +604,23 @@ document.addEventListener("alpine:init", () => {
             document
                 .getElementById(`phase-${phase}`)
                 ?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+        },
+
+        // Comparison table -> a card or an eval block in 03 view. Both 03 views
+        // are x-if templates, so switch first and scroll once the view exists.
+        // Without `view` the active view stays: each holds every answer block.
+        async jumpTo(id, view = null) {
+            if (!id) return;
+            if (view && this.resultsView !== view) {
+                this.resultsView = view;
+                await this.$nextTick();
+            }
+            const target = document.getElementById(id);
+            if (!target) return;
+            const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+            // Keyboard users continue from the target; preventScroll keeps the smooth scroll.
+            target.focus({ preventScroll: true });
         },
 
         async copyText(text) {

@@ -18,6 +18,7 @@ export ACTIONLINT_IMAGE  := $(call tool_image,actionlint)
 export ZIZMOR_IMAGE      := $(call tool_image,zizmor)
 export HADOLINT_IMAGE    := $(call tool_image,hadolint)
 export SHELLCHECK_IMAGE  := $(call tool_image,shellcheck)
+export NODE_IMAGE        := $(call tool_image,node)
 export TRIVY_IMAGE       := $(call tool_image,trivy)
 export REGISTRY_IMAGE    := $(call tool_image,registry)
 
@@ -26,7 +27,7 @@ export PUBLISHED_IMAGE   ?= ghcr.io/ykvit/lmao
 
 .PHONY: check ci \
         check-workflows check-code check-image test-image \
-        check-python lint-python lint-shell lint-docker audit test \
+        check-python lint-python lint-shell lint-docker audit test test-js \
         build-dev build-prod smoke-test scan-image \
         scan-published zizmor-sarif
 
@@ -45,7 +46,7 @@ ci: check ##> Exactly what GitHub CI runs (needs GH_TOKEN).
 check-workflows: ##> Lint GitHub workflows (actionlint, zizmor).
 	scripts/ci/lint-workflows.sh
 
-check-code: check-python lint-shell lint-python audit test ##> Check Python version, lint, audit, run tests.
+check-code: check-python lint-shell lint-python audit test test-js ##> Check Python version, lint, audit, run Python and JS tests.
 
 check-python: ##> Dockerfile and requires-python agree on Python version.
 	scripts/ci/check-python.sh
@@ -73,6 +74,9 @@ audit: ##> Audit production dependencies.
 
 test: ##> Tests with coverage (coverage.xml, htmlcov/).
 	scripts/ci/test.sh
+
+test-js: ##> JavaScript unit tests (node --test).
+	scripts/ci/test-js.sh
 
 build-dev: ##> Build dev image.
 	scripts/ci/build-image.sh dev "$(CI_DEV_IMAGE)"

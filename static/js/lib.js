@@ -126,6 +126,27 @@ function fmtSpan(sec) {
     return sec < 60 ? `${sec.toFixed(1)} s` : fmtClock(sec);
 }
 
+// --- dom anchors ----------------------------------------------------------
+
+// Model names contain ':', '/' and '.', so they cannot be used as ids as is.
+// The id is a readable slug plus a FNV-1a hash of the raw parts, so names
+// with the same slug ('a:b' and 'a/b') still get different ids.
+// domId('answer', 'hf.co/o/m-GGUF:Q4_K_M', 'q1')
+//   -> 'answer-hf-co-o-m-gguf-q4_k_m-q1-<hash>'
+function domId(prefix, ...parts) {
+    const raw = parts.map((p) => String(p ?? "")).join("\n");
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < raw.length; i += 1) {
+        hash ^= raw.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    const slug = raw
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    return [prefix, slug, (hash >>> 0).toString(36)].filter(Boolean).join("-");
+}
+
 // --- results --------------------------------------------------------------
 
 // UI labels for the stable ids stored in the results.
@@ -334,6 +355,7 @@ function evalEntry(question, result, index) {
 
     return {
         qid: question.id,
+        anchor: domId("answer", result.model_name, question.id),
         index,
         label: questionLabel(question),
         question: question.question || "",
@@ -408,6 +430,7 @@ function buildQuestionCard(question, summaryModels, display) {
     const source = (question.reference || {}).source || "none";
     return {
         id: question.id,
+        anchor: domId("question", question.id),
         label: questionLabel(question),
         question: question.question || "",
         metricsLine: `${rows.length} models · ${source === "none" ? "no reference" : `${source} reference`}`,
@@ -681,11 +704,14 @@ function buildReport(data) {
         questions.forEach((question, index) => {
             const result = (question.results || []).find((r) => r.model_name === stats.model);
             if (!result) {
-                cells.push({ text: "–", warn: false, muted: true, title: "", bar: null });
+                cells.push({ text: "–", warn: false, muted: true, title: "", bar: null, anchor: null });
                 return;
             }
             results.push(result);
-            cells.push(matrixCell(question, result));
+            cells.push({
+                ...matrixCell(question, result),
+                anchor: domId("answer", stats.model, question.id),
+            });
             entries.push(evalEntry(question, result, index));
         });
 
@@ -697,6 +723,7 @@ function buildReport(data) {
                 : null;
         return {
             model: stats.model,
+            anchor: domId("model", stats.model),
             short: display(stats.model),
             mean: fmtNum(stats.mean),
             median: fmtNum(stats.median),
@@ -744,8 +771,11 @@ function buildReport(data) {
         chart: buildChart(summaryModels, display, rec.model),
         // model | mean | median | pass | one column per question | t/s | time
         grid: `grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(${questions.length},48px) 64px 64px`,
-        questionHeads: questions.map((q) => ({ id: q.id, title: q.tag || "" })),
-        models,
+        questionHeads: questions.map((q) => ({
+            id: q.id,
+            title: q.tag || "",
+            anchor: domId("question", q.id),
+        })),        models,
         questionCards: questions.map((q) => buildQuestionCard(q, summaryModels, display)),
         references: questions.map((q) => {
             const ref = q.reference || {};
@@ -772,6 +802,7 @@ if (typeof module !== "undefined" && module.exports) {
         buildSteps,
         clampScore,
         competitionRanks,
+        domId,
         fmtClock,
         fmtNum,
         fmtSeconds,

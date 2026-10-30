@@ -47,6 +47,18 @@ test("pad2 is one-based", () => {
     assert.equal(lib.pad2(11), "12");
 });
 
+test("domId gives a stable, valid id and keeps similar names apart", () => {
+    const id = lib.domId("answer", "hf.co/o/m-GGUF:Q4_K_M", "q1");
+
+    assert.match(id, /^answer-hf-co-o-m-gguf-q4_k_m-q1-[0-9a-z]+$/);
+    assert.equal(lib.domId("answer", "hf.co/o/m-GGUF:Q4_K_M", "q1"), id);
+    // same slug, different raw parts
+    assert.notEqual(lib.domId("model", "a:b"), lib.domId("model", "a/b"));
+    assert.notEqual(lib.domId("answer", "a-b", "c"), lib.domId("answer", "a", "b-c"));
+    assert.notEqual(lib.domId("model", "q1"), lib.domId("question", "q1"));
+    assert.match(lib.domId("model", null), /^model-[0-9a-z]+$/);
+});
+
 // --- running screen -------------------------------------------------------
 
 test("stepKey has the same shape as the SSE fields", () => {
@@ -570,10 +582,33 @@ test("buildReport: table grid, heads, references and chart", () => {
         report.grid,
         "grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(1,48px) 64px 64px",
     );
-    assert.deepEqual(report.questionHeads, [{ id: "q1", title: "logic" }]);
+    assert.deepEqual(report.questionHeads, [
+        { id: "q1", title: "logic", anchor: lib.domId("question", "q1") },
+    ]);
     assert.equal(report.references[0].title, "q1 · logic · generated");
     assert.equal(report.chart.points.length, 1);
     assert.deepEqual(report.chart.missing, ["b"]);
+});
+
+test("buildReport: anchors link the comparison table to the 03 cards", () => {
+    const report = lib.buildReport(runFixture());
+    const [a, b] = report.models;
+    const [card] = report.questionCards;
+    const answerA = lib.domId("answer", "a", "q1");
+
+    assert.equal(a.anchor, lib.domId("model", "a"));
+    assert.equal(card.anchor, report.questionHeads[0].anchor);
+    // a cell, its per-model block and its per-question block share one id
+    assert.equal(a.cells[0].anchor, answerA);
+    assert.equal(a.entries[0].anchor, answerA);
+    assert.equal(card.entries.find((e) => e.model === "a").anchor, answerA);
+    // a failed cell still points to its eval block
+    assert.equal(b.cells[0].anchor, lib.domId("answer", "b", "q1"));
+
+    // a model without a result for the question: nothing to jump to
+    const data = runFixture();
+    data.questions_results[0].results.pop();
+    assert.equal(lib.buildReport(data).models[1].cells[0].anchor, null);
 });
 
 test("buildReport: notes for a judge that is a candidate and for missing references", () => {

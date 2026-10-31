@@ -348,6 +348,7 @@ def test_models_are_loaded_once_and_never_together():
     assert ollama.max_loaded == 1
     assert ollama.loaded == set()
 
+
 def test_local_mode_grades_model_by_model():
     ollama = FakeOllama()
 
@@ -362,6 +363,7 @@ def test_local_mode_grades_model_by_model():
         ("cand-b", "q1"),
         ("cand-b", "q2"),
     ]
+
 
 def test_models_are_unloaded_when_a_call_raises():
     ollama = FakeOllama(answers={"cand-a": RuntimeError("boom")})

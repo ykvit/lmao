@@ -222,9 +222,19 @@
     <template x-if="report">
         <div class="flex flex-col gap-33">
 
-            <div class="flex flex-col gap-8">
-                <div class="text-heading break-words" x-text="runTitle"></div>
-                <div class="text-fg-muted break-words" x-text="report.meta"></div>
+            <div class="flex justify-between items-start gap-22">
+                <div class="min-w-0 flex flex-col gap-8">
+                    <div class="text-heading break-words" x-text="runTitle"></div>
+                    <div class="text-fg-muted break-words" x-text="report.meta"></div>
+                </div>
+                <div class="shrink-0 flex items-center gap-15 text-fg-muted print:hidden">
+                    <span>export</span>
+                    {%- for fmt in ("json", "csv", "md") %}
+                    <a :href="'/api/results/' + encodeURIComponent(activeRunId) + '/export?format={{ fmt }}'"
+                       download class="hover:text-fg">{{ fmt }}</a>
+                    {%- endfor %}
+                    <button type="button" @click="window.print()" class="hover:text-fg">print</button>
+                </div>
             </div>
 
             {# 01 summary: verdict -> key figures -> notes -> judge text #}

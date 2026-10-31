@@ -240,7 +240,7 @@
    Panel id: panel-<state>, tab ids: tab-<state>-<value>. #}
 {% macro tabs(state, items, label) -%}
 {%- set values = items|map("first")|join(",") %}
-<div class="flex" role="tablist" aria-label="{{ label }}"
+<div class="flex print:hidden" role="tablist" aria-label="{{ label }}"
      @keydown.arrow-right.prevent="cycleTab('{{ state }}', '{{ values }}', 1)"
      @keydown.arrow-left.prevent="cycleTab('{{ state }}', '{{ values }}', -1)"
      @keydown.home.prevent="setTab('{{ state }}', '{{ items[0][0] }}')"

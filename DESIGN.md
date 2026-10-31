@@ -5,7 +5,7 @@ Strict, utilitarian, engineering-style interface in the spirit of teenage engine
 ## Source of truth
 
 - Variables collection `tokens` has `WEB` code syntax (`var(--color-*)`)
-- Light theme: **not designed yet**. Tokens are the only thing that must change when it is added. Icons use `currentColor` for this reason.
+- Light theme: **not designed yet**. Tokens are the only thing that must change when it is added. Icons use `currentColor` for this reason. Print already uses a light variant of the tokens (see "Export and print"); a light theme can start from those values.
 
 | Figma frame | Node | Alpine state | setup | archive |
 |---|---|---|---|---|
@@ -292,6 +292,19 @@ Sorted newest first on the client (`sortHistory`): time from the `…_YYYYMMDD_H
 ### Keyboard
 `[` setup, `]` archive, `Esc` first screen. `event.code`, so layout-independent (works on the Ukrainian layout); ignored in inputs and with modifiers.
 
+### Export and print
+In the results header, right of the run title: `export json csv md print` (`text-fg-muted`, `hover:text-fg`, `shrink-0`; hidden when printing). `json`, `csv` and `md` are `<a href download>` to `/api/results/<id>/export?format=…`; the server sends an attachment. `print` calls `window.print()`.
+
+`@media print` in `_theme.html` (plain CSS, unlayered, so it wins over the utilities):
+- The tokens get a light variant: `bg` #ffffff, `surface` #f5f5f6, `line` #c9c9cf, `fg` #000000, `fg-muted` #55555a, `link` #0b5cad, `warn` #8a5a00. This is the only place where colours differ.
+- `print-color-adjust: exact` everywhere, otherwise the `bg-fg` / `bg-line` bars and the surface boxes disappear.
+- The header and both panels are hidden; `h-screen`, `overflow-hidden` on the body and `overflow-y-auto` on `main` are reset, so the report flows over pages. The tabs are hidden. Code blocks wrap.
+
+Limits:
+- Only the active view is printed: `per model` or `per question` (they are `x-if`), `table` or `chart`. Switch the tab first.
+- Closed `<details>` with the reference answers print closed.
+- A wide matrix keeps its `overflow-x-auto` and is clipped at the page edge.
+
 ### Live region
 One `sr-only aria-live="polite"` region per page (`announcement`). Announced: the first event of each phase, the load notice (once per row), finish. Errors use `role="alert"` on the warn notice.
 
@@ -354,7 +367,7 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 - **Running screen.** Rows are built up front as `queued` from the request payload and keyed `phase:model:question`. Grading rows go model by model, question by question, in both modes (`_run_local` and `_run_cloud` grade in the same order). The order is display only: events find their row by key. A failed answer marks its grading row `skipped` (the backend sends no event for it). Rows in flight when the stream breaks become `error` / `interrupted`. The stream is closed on the first `onerror` (no auto-reconnect: the backend replays from the start).
 - **Load notice.** Only on the first call of a model load group (first reference, first grading, first answer of each candidate), after ~8 s. No VRAM claims.
 - **Per question view.** Ranks use competition ranking (1, 1, 3); failed answers are `not ranked` and listed last. The denominator is the number of models in the question. Truncated answers are ranked by their score and keep the `*`.
-- **Additions without a Figma frame.** `collapse` in an expanded test case, import / export of test cases, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, per-model groups in the answer and grading phases, comparison chart and matrix bars, matrix median column and navigation, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
+- **Additions without a Figma frame.** `collapse` in an expanded test case, import / export of test cases, export links and print, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, per-model groups in the answer and grading phases, comparison chart and matrix bars, matrix median column and navigation, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
 - **Interaction states.** Global `:focus-visible` outline (1px `fg`, offset 2px); hover: archive item `bg-bg`, nav toggles, wordmark subtitle, inactive tabs and matrix q headers `text-fg`; matrix model names `text-fg-muted`; primary `bg-fg-muted`, secondary `border-fg`, warn buttons `bg-line`.
 - **Not in this PR.** `cancel run` (needs an endpoint: flag in `TASKS`, check between steps in both `_run_local` and `_run_cloud`, `unload` in `finally`), light theme, responsive overlays, SSE reconnect, vendoring Tailwind / Alpine / fonts (see the CDN note below).
 

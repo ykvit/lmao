@@ -17,6 +17,7 @@ from flask import Flask, Response, jsonify, render_template, request
 from werkzeug.utils import secure_filename
 
 from core.evaluator import SCHEMA_VERSION, EvaluationPipeline
+from core.export import to_csv, to_markdown
 from core.ollama_client import OllamaClient
 
 load_dotenv()
@@ -36,6 +37,18 @@ _OPTIONAL_TEXT_FIELDS = ("tag", "specific_rationale", "reference")
 # An SSE stream that writes nothing never notices a closed connection, and
 # gunicorn has only a few threads. A comment line every few seconds fixes that.
 HEARTBEAT_SEC = 15
+
+
+def _to_json(data: dict) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+# format -> (renderer, mimetype) for /api/results/<task_id>/export
+_EXPORTS = {
+    "json": (_to_json, "application/json"),
+    "csv": (to_csv, "text/csv"),
+    "md": (to_markdown, "text/markdown"),
+}
 
 
 def _sanitize_tag(tag, fallback="run", max_length=40):
@@ -152,6 +165,31 @@ def _parse_task_id(task_id: str) -> tuple[str, str]:
     except ValueError:
         return tag_name, f"{date_str} {time_str}"
     return tag_name, moment.strftime("%Y-%m-%d %H:%M")
+
+
+def _load_run(task_id: str) -> tuple[dict | None, tuple | None]:
+    """Reads a saved run together with its technical metrics.
+
+    Args:
+        task_id (str): The task id from the URL.
+
+    Returns:
+        tuple: (data, None) on success, or (None, error) where error is a
+            (response, status) pair ready to be returned from a view.
+    """
+    safe_task_id = secure_filename(task_id)
+    if not safe_task_id or safe_task_id != task_id:
+        return None, (jsonify({"error": "Invalid task_id"}), 400)
+
+    results = _read_run(safe_task_id)
+    if results is None:
+        return None, (jsonify({"error": "Results not found or not ready"}), 404)
+
+    metrics_path = os.path.join(
+        pipeline.history_dir, safe_task_id, "technical_metrics.json"
+    )
+    metrics = (_read_json(metrics_path) or {}).get("metrics", {})
+    return {**results, "metrics": metrics}, None
 
 
 @app.route("/", methods=["GET"])
@@ -316,20 +354,41 @@ def get_results(task_id: str):
     Returns:
         Response: A JSON object with the results and metrics.
     """
-    safe_task_id = secure_filename(task_id)
-    if not safe_task_id or safe_task_id != task_id:
-        return jsonify({"error": "Invalid task_id"}), 400
+    data, error = _load_run(task_id)
+    if error:
+        return error
+    return jsonify(data), 200
 
-    results = _read_run(safe_task_id)
-    if results is None:
-        return jsonify({"error": "Results not found or not ready"}), 404
 
-    metrics_path = os.path.join(
-        pipeline.history_dir, safe_task_id, "technical_metrics.json"
-    )
-    metrics = (_read_json(metrics_path) or {}).get("metrics", {})
+@app.route("/api/results/<task_id>/export", methods=["GET"])
+def export_results(task_id: str):
+    """Downloads a saved run as json, csv or Markdown.
 
-    return jsonify({**results, "metrics": metrics}), 200
+    The format comes from the `format` query parameter (json, csv or md). The
+    json export has the same body as /api/results/<task_id>. The aggregates are
+    the ones saved in the run; nothing is recomputed.
+
+    Args:
+        task_id (str): The unique identifier of the completed task.
+
+    Returns:
+        Response: The file as an attachment, or a JSON error (400 for an
+            invalid task_id or an unknown format, 404 for a missing run).
+    """
+    fmt = request.args.get("format", "")
+    if fmt not in _EXPORTS:
+        return jsonify({"error": "Unknown format. Use json, csv or md."}), 400
+
+    data, error = _load_run(task_id)
+    if error:
+        return error
+
+    render, mimetype = _EXPORTS[fmt]
+    response = Response(render(data), mimetype=mimetype)
+    # task_id passed the secure_filename check, so it is safe in a header.
+    response.headers["Content-Disposition"] = f'attachment; filename="{task_id}.{fmt}"'
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.route("/health")

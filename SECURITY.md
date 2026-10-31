@@ -36,7 +36,10 @@ models.
 Candidate answers are wrapped in delimiters and given to the judge as data, and
 the grade must match a fixed JSON schema. This reduces but does not eliminate
 prompt injection, so scores are not a security boundary. The UI renders model
-output as text, never as HTML.
+output as text, never as HTML. CSV exports prefix cells that start with `=`,
+`+`, `-`, `@`, a tab or a carriage return with an apostrophe, so a spreadsheet
+does not run them as formulas. Markdown exports fence model answers with a
+fence longer than any backtick run inside them and quote the judge text.
 
 ## Supply chain
 

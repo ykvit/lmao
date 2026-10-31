@@ -47,3 +47,12 @@ def test_index_html_tags_are_balanced(client):
 
     assert parser.errors == []
     assert parser.stack == []
+
+
+def test_index_html_has_export_links_and_print_styles(client):
+    html = client.get("/").get_data(as_text=True)
+
+    for fmt in ("json", "csv", "md"):
+        assert f"/export?format={fmt}" in html
+    assert "window.print()" in html
+    assert "@media print" in html

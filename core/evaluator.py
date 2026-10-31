@@ -449,17 +449,22 @@ class EvaluationPipeline:
             "done_reason": "",
             "error": result.get("error"),
             "tps": None,
+            "cps": None,
             "time_sec": None,
         }
         if result["success"]:
             text, truncated = self._read_answer(result)
             metrics = result["metrics"]
+            eval_time = metrics["eval_time_sec"]
             entry.update(
                 answer=text,
                 status=STATUS_TRUNCATED if truncated else STATUS_OK,
                 truncated=truncated,
                 done_reason=result["done_reason"],
                 tps=metrics["tokens_per_second"],
+                # Characters of the cleaned answer, not tokens: tokenizers differ
+                # between models, so t/s does not compare across them.
+                cps=round(len(text) / eval_time, 2) if eval_time > 0 else None,
                 # Answer time without the model load.
                 time_sec=round(
                     max(metrics["total_time_sec"] - metrics["load_time_sec"], 0), 2
@@ -550,6 +555,7 @@ class EvaluationPipeline:
                         "score": entry["score"],
                         "no_reference": question["no_reference"],
                         "tps": entry["tps"],
+                        "cps": entry["cps"],
                         "time_sec": entry["time_sec"],
                     }
                 )

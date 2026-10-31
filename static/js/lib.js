@@ -484,7 +484,7 @@ function buildDistribution(results) {
     return { n, rows };
 }
 
-// --- chart: mean score against median t/s --------------------------------
+// --- chart: mean score against median chars/s ----------------------------
 
 function median(values) {
     const sorted = [...values].sort((a, b) => a - b);
@@ -514,20 +514,20 @@ function buildChart(summaryModels, display, recommended) {
     const missing = [];
     summaryModels.forEach((stats) => {
         const score = clampScore(stats.mean);
-        const tps =
-            typeof stats.median_tps === "number" && isFinite(stats.median_tps) && stats.median_tps >= 0
-                ? stats.median_tps
+        const cps =
+            typeof stats.median_cps === "number" && isFinite(stats.median_cps) && stats.median_cps >= 0
+                ? stats.median_cps
                 : null;
         const short = display(stats.model);
-        if (score === null || tps === null) missing.push(short);
-        else points.push({ model: stats.model, short, score, tps, best: stats.model === recommended });
+        if (score === null || cps === null) missing.push(short);
+        else points.push({ model: stats.model, short, score, cps, best: stats.model === recommended });
     });
     if (!points.length) {
         return { points, missing, xTicks: [], yTicks: [], pareto: "", mid: null, label: "" };
     }
 
-    const maxTps = Math.max(...points.map((p) => p.tps));
-    const span = maxTps > 0 ? maxTps * 1.05 : 1;
+    const maxCps = Math.max(...points.map((p) => p.cps));
+    const span = maxCps > 0 ? maxCps * 1.05 : 1;
     const step = niceStep(span, 4);
     const tickCount = Math.max(1, Math.ceil(span / step));
     const xMax = step * tickCount;
@@ -540,21 +540,21 @@ function buildChart(summaryModels, display, recommended) {
     // Fixed 0..100: charts of different runs stay comparable.
     const yTicks = [0, 25, 50, 75, 100].map((v) => ({ text: String(v), pos: 100 - v }));
 
-    const midTps = median(points.map((p) => p.tps));
+    const midCps = median(points.map((p) => p.cps));
     const midScore = median(points.map((p) => p.score));
     points.forEach((p) => {
-        p.left = xPos(p.tps);
+        p.left = xPos(p.cps);
         p.top = 100 - p.score;
         p.flip = p.left > 70; // label on the left near the right edge
-        p.leading = p.tps >= midTps && p.score >= midScore;
-        p.title = `${p.short}: mean score ${p.score} · ${round1(p.tps)} t/s`;
+        p.leading = p.cps >= midCps && p.score >= midScore;
+        p.title = `${p.short}: mean score ${p.score} · ${round1(p.cps)} c/s`;
     });
 
     // Walk from the fastest; a point is on the front when it beats every faster one.
-    const byTps = [...points].sort((a, b) => b.tps - a.tps || b.score - a.score);
+    const byCps = [...points].sort((a, b) => b.cps - a.cps || b.score - a.score);
     const front = [];
     let best = -Infinity;
-    byTps.forEach((p) => {
+    byCps.forEach((p) => {
         if (p.score > best) {
             front.push(p);
             best = p.score;
@@ -570,14 +570,14 @@ function buildChart(summaryModels, display, recommended) {
         yTicks,
         pareto: front.length > 1 ? front.map((p) => `${p.left},${p.top}`).join(" ") : "",
         mid: {
-            left: xPos(midTps),
+            left: xPos(midCps),
             bottom: midScore,
-            flipX: xPos(midTps) > 70, // t/s label left of its line near the right edge
+            flipX: xPos(midCps) > 70, // c/s label left of its line near the right edge
             flipY: midScore > 90, // score label below its line near the top
-            tpsText: `median ${round1(midTps)} t/s`,
+            cpsText: `median ${round1(midCps)} c/s`,
             scoreText: `median ${round1(midScore)}`,
         },
-        label: `mean score against median t/s, ${points.length} models. faster and better than the median: ${
+        label: `mean score against median chars/s, ${points.length} models. faster and better than the median: ${
             leading.length ? leading.join(", ") : "none"
         }.`,
     };
@@ -625,9 +625,9 @@ function verdictFigures(summaryModels, model) {
         },
         {
             label: "speed",
-            value: num(s.median_tps),
-            unit: "t/s",
-            caption: caption(rankOf(summaryModels, model, "median_tps", true), num),
+            value: num(s.median_cps),
+            unit: "c/s",
+            caption: caption(rankOf(summaryModels, model, "median_cps", true), num),
         },
         {
             label: "median time",
@@ -724,6 +724,7 @@ function buildReport(data) {
             mean: fmtNum(stats.mean),
             median: fmtNum(stats.median),
             passRate: pass,
+            cps: fmtNum(stats.median_cps),
             tps: fmtNum(stats.median_tps),
             time: fmtNum(stats.median_time_sec),
             cells,
@@ -737,6 +738,7 @@ function buildReport(data) {
                 `critical ${fmtNum(stats.critical_fails)}`,
                 `errors ${fmtNum(stats.errors)}`,
                 `judge errors ${fmtNum(stats.judge_errors)}`,
+                `${fmtNum(stats.median_cps)} c/s`,
                 `${fmtNum(stats.median_tps)} t/s`,
                 totalTime,
             ]
@@ -765,8 +767,8 @@ function buildReport(data) {
         notes,
         summaryBlocks: shortenNames(parseMarkdown(summary.text, { bareFence: true }), names),
         chart: buildChart(summaryModels, display, rec.model),
-        // model | mean | median | pass | one column per question | t/s | time
-        grid: `grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(${questions.length},48px) 64px 64px`,
+        // model | mean | median | pass | one column per question | c/s | t/s | time
+        grid: `grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(${questions.length},48px) 64px 64px 64px`,
         questionHeads: questions.map((q) => ({
             id: q.id,
             title: q.tag || "",

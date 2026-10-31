@@ -44,12 +44,14 @@ def summarize_model(model: str, entries: list[dict]) -> dict:
         model (str): The model name.
         entries (list[dict]): One entry per question with the keys status,
             score (int or None), no_reference (bool), tps (tokens per second or
-            None) and time_sec (answer time without model loading, or None).
+            None), cps (characters per second or None) and time_sec (answer
+            time without model loading, or None).
 
     Returns:
         dict: model, n (answers counted in the score), mean, median,
             pass_rate (fraction), fails, critical_fails, errors,
-            judge_errors, n_no_reference, median_tps and median_time_sec.
+            judge_errors, n_no_reference, median_tps, median_cps and
+            median_time_sec.
     """
     scores = []
     errors = judge_errors = n_no_reference = 0
@@ -84,6 +86,7 @@ def summarize_model(model: str, entries: list[dict]) -> dict:
         "judge_errors": judge_errors,
         "n_no_reference": n_no_reference,
         "median_tps": _median([e["tps"] for e in answered], 2),
+        "median_cps": _median([e["cps"] for e in answered if e["cps"] is not None], 2),
         "median_time_sec": _median([e["time_sec"] for e in answered], 2),
     }
 

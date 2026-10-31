@@ -103,6 +103,45 @@ function loadGroup(phase, model, cloud) {
     return phase === "reference" ? "judge-1" : "judge-2";
 }
 
+// Rows of one phase grouped by model, in row order. Reference and summary have
+// one group (the judge). The state is derived from the rows, so no new events.
+function modelGroups(steps, phase) {
+    const groups = new Map();
+    for (const s of steps) {
+        if (s.phase !== phase) continue;
+        if (!groups.has(s.model)) groups.set(s.model, []);
+        groups.get(s.model).push(s);
+    }
+    return [...groups].map(([model, rows]) => {
+        const count = (state) => rows.filter((r) => r.state === state).length;
+        const ok = count("done");
+        const errors = count("error");
+        const skipped = count("skipped");
+        const total = rows.length;
+        const finished = ok + errors + skipped;
+
+        // Between two rows of one model nothing runs for a moment: still running.
+        let state = "queued";
+        if (count("running") || (finished > 0 && finished < total)) state = "running";
+        else if (finished === total) state = "done";
+
+        // Wall clock from the first start to the last end (server timestamps).
+        const starts = rows.map((r) => r.startTs).filter((t) => t !== null);
+        const ends = rows.map((r) => r.endTs).filter((t) => t !== null);
+        const span =
+            state === "done" && starts.length && ends.length
+                ? fmtSpan((Math.max(...ends) - Math.min(...starts)) / 1000)
+                : "";
+
+        // Running: how far it got. Done: how many succeeded, and how long it took.
+        const side =
+            state === "done"
+                ? [`${ok}/${total}`, span].filter(Boolean).join(" · ")
+                : `${finished}/${total}`;
+        return { model, rows, total, ok, errors, skipped, state, side };
+    });
+}
+
 // Empty for missing, broken or negative durations (clock skew, lost start event).
 function fmtSeconds(sec) {
     return typeof sec === "number" && isFinite(sec) && sec >= 0 ? `${sec.toFixed(1)} s` : "";
@@ -808,6 +847,7 @@ if (typeof module !== "undefined" && module.exports) {
         isFailed,
         loadGroup,
         matrixCell,
+        modelGroups,
         median,
         niceStep,
         pad2,

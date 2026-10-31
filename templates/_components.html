@@ -164,7 +164,25 @@
     <div class="max-w-320 break-words text-fg-muted tabular-nums" x-text="{{ meta }}"></div>
 </div>
 {%- endmacro %}
-
+{# model-group head: a model inside a phase. Expects the group as `mg` and the
+   phase as `g.phase` in scope. Click folds the rows. Errors only show as `! N err`. #}
+{% macro model_group_head() -%}
+<button type="button" @click="toggleModel(g.phase, mg)"
+        :aria-expanded="isModelOpen(g.phase, mg)"
+        class="w-full flex items-center justify-between gap-15 py-10 border-b border-line text-left hover:text-fg"
+        :class="stateClass(mg.state)">
+    <span class="min-w-0 flex items-center gap-8">
+        {{ activity_dot("mg.state === 'running'") }}
+        <span class="truncate" x-text="label(mg.model)" :title="mg.model"></span>
+    </span>
+    <span class="shrink-0 flex items-center gap-15 tabular-nums">
+        <span x-show="mg.errors" class="text-warn" x-text="'! ' + mg.errors + ' err'"></span>
+        <span x-show="mg.skipped" class="text-fg-muted" x-text="mg.skipped + ' skipped'"></span>
+        <span class="text-fg-muted" x-text="mg.side"></span>
+        <span class="text-fg-muted" x-text="isModelOpen(g.phase, mg) ? 'hide' : 'show'"></span>
+    </span>
+</button>
+{%- endmacro %}
 {# Card header: title left, metrics right. #}
 {% macro card_head(title, metrics, title_tip="") -%}
 <div class="flex justify-between items-center gap-15 pb-15 border-b border-line">

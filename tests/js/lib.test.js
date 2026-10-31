@@ -115,6 +115,83 @@ test("loadGroup tells which model has to be loaded", () => {
     assert.equal(lib.loadGroup("grading", "j", true), null);
 });
 
+// --- model groups ---------------------------------------------------------
+
+function setRow(steps, key, fields) {
+    Object.assign(steps.find((s) => s.key === key), fields);
+}
+
+test("modelGroups splits a phase by model in row order, flat for the judge phases", () => {
+    const steps = lib.buildSteps("j", ["a", "b"], 2);
+
+    assert.deepEqual(
+        lib.modelGroups(steps, "grading").map((g) => [g.model, g.total]),
+        [
+            ["a", 2],
+            ["b", 2],
+        ],
+    );
+    assert.deepEqual(
+        lib.modelGroups(steps, "reference").map((g) => [g.model, g.total]),
+        [["j", 2]],
+    );
+    assert.equal(lib.modelGroups(steps, "summary").length, 1);
+});
+
+test("modelGroups: a queued group", () => {
+    const [a] = lib.modelGroups(lib.buildSteps("j", ["a"], 2), "answer");
+
+    assert.equal(a.state, "queued");
+    assert.equal(a.side, "0/2");
+});
+
+test("modelGroups: a group in progress stays running between two rows", () => {
+    const steps = lib.buildSteps("j", ["a"], 3);
+    setRow(steps, "answer:a:q1", { state: "done" });
+    setRow(steps, "answer:a:q2", { state: "running" });
+    const [running] = lib.modelGroups(steps, "answer");
+
+    assert.equal(running.state, "running");
+    assert.equal(running.side, "1/3");
+
+    setRow(steps, "answer:a:q2", { state: "done" });
+    const [between] = lib.modelGroups(steps, "answer");
+
+    assert.equal(between.state, "running");
+    assert.equal(between.side, "2/3");
+});
+
+test("modelGroups: a finished group shows successes, errors and the duration", () => {
+    const steps = lib.buildSteps("j", ["a"], 3);
+    setRow(steps, "answer:a:q1", { state: "done", startTs: 1000, endTs: 20000 });
+    setRow(steps, "answer:a:q2", { state: "error", startTs: 20000, endTs: 30000 });
+    setRow(steps, "answer:a:q3", { state: "done", startTs: 30000, endTs: 52300 });
+    const [a] = lib.modelGroups(steps, "answer");
+
+    assert.equal(a.state, "done");
+    assert.equal(a.ok, 2);
+    assert.equal(a.errors, 1);
+    assert.equal(a.side, "2/3 · 51.3 s");
+});
+
+test("modelGroups: skipped grading rows count as finished and are reported apart", () => {
+    const steps = lib.buildSteps("j", ["a"], 2);
+    setRow(steps, "grading:a:q1", { state: "done" });
+    setRow(steps, "grading:a:q2", { state: "skipped" });
+    const [a] = lib.modelGroups(steps, "grading");
+
+    assert.equal(a.state, "done");
+    assert.equal(a.skipped, 1);
+    assert.equal(a.side, "1/2");
+});
+
+test("modelGroups: no duration without server timestamps", () => {
+    const steps = lib.buildSteps("j", ["a"], 1);
+    setRow(steps, "answer:a:q1", { state: "done" });
+
+    assert.equal(lib.modelGroups(steps, "answer")[0].side, "1/1");
+});
+
 test("fmtSeconds is empty for broken durations", () => {
     assert.equal(lib.fmtSeconds(1.234), "1.2 s");
     assert.equal(lib.fmtSeconds(0), "0.0 s");

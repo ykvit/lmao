@@ -194,6 +194,12 @@ Grid `grid-cols-[2fr_2fr_2fr_1fr] gap-33`: one segment per phase (`01 reference`
 ### Phase group (running)
 Header `flex justify-between items-center pb-8 border-b border-line`: title left; once the phase is done, `side · show/hide` right. A finished phase folds into its header; a phase with errors stays open unless folded by hand (`run.expanded`).
 
+Inside `02 candidate answers` and `03 grading` the rows are grouped by model (`modelGroups()` in `lib.js`, `ui.model_group_head`). Reference and summary have one group (the judge) and no header.
+- Only the model that works now is open; finished and queued models are folded. A group is `running` from its first started row until its last one is finished, so it does not fold between two rows.
+- Header: activity dot (running) + short name left; `! N err` (warn), `N skipped` and `side · show/hide` right. `side` is `finished / total` while running, `ok / total · duration` when done (`13/15 · 50.3 s`). Duration = first start to last end, as for phases.
+- Errors never open a group (the screen would jump during a long run): they show as `! N err`; click the header to open it (`run.openModels`, key `phase:model`, the manual choice wins over the default).
+- A failed answer makes its grading row `skipped`; skipped rows count as finished and are shown apart, not as successes.
+
 ### Comparison (`02 comparison`)
 Section header row: label on the left, `table` / `chart` tabs on the right.
 
@@ -337,7 +343,7 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 - **Running screen.** Rows are built up front as `queued` from the request payload and keyed `phase:model:question`. Grading rows go model by model, question by question, in both modes (`_run_local` and `_run_cloud` grade in the same order). The order is display only: events find their row by key. A failed answer marks its grading row `skipped` (the backend sends no event for it). Rows in flight when the stream breaks become `error` / `interrupted`. The stream is closed on the first `onerror` (no auto-reconnect: the backend replays from the start).
 - **Load notice.** Only on the first call of a model load group (first reference, first grading, first answer of each candidate), after ~8 s. No VRAM claims.
 - **Per question view.** Ranks use competition ranking (1, 1, 3); failed answers are `not ranked` and listed last. The denominator is the number of models in the question. Truncated answers are ranked by their score and keep the `*`.
-- **Additions without a Figma frame.** `collapse` in an expanded test case, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, comparison chart and matrix bars, matrix median column and navigation, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
+- **Additions without a Figma frame.** `collapse` in an expanded test case, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, per-model groups in the answer and grading phases, comparison chart and matrix bars, matrix median column and navigation, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
 - **Interaction states.** Global `:focus-visible` outline (1px `fg`, offset 2px); hover: archive item `bg-bg`, nav toggles, wordmark subtitle, inactive tabs and matrix q headers `text-fg`; matrix model names `text-fg-muted`; primary `bg-fg-muted`, secondary `border-fg`, warn buttons `bg-line`.
 - **Not in this PR.** `cancel run` (needs an endpoint: flag in `TASKS`, check between steps in both `_run_local` and `_run_cloud`, `unload` in `finally`), light theme, responsive overlays, SSE reconnect, vendoring Tailwind / Alpine / fonts (see the CDN note below).
 

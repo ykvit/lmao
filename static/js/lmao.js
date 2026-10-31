@@ -32,6 +32,7 @@ document.addEventListener("alpine:init", () => {
         now: 0,
         error: "",
         expanded: {}, // phase -> true/false, set by the user; default: folded when done without errors
+        openModels: {}, // "phase:model" -> true/false, set by the user; default: open while running
     });
 
     Alpine.data("lmao", () => ({
@@ -193,6 +194,27 @@ document.addEventListener("alpine:init", () => {
 
         togglePhase(phase) {
             this.run.expanded[phase] = this.isCollapsed(phase);
+        },
+
+        // Answer and grading are listed per model; reference and summary are
+        // one judge and stay flat (no group header).
+        isGrouped(phase) {
+            return phase === "answer" || phase === "grading";
+        },
+
+        modelGroups(phase) {
+            return modelGroups(this.run.steps, phase);
+        },
+
+        // Only the model that works now is open. Errors do not open a group
+        // (the run would jump around): they show as `! N err` in its header.
+        isModelOpen(phase, group) {
+            if (!this.isGrouped(phase)) return true;
+            return this.run.openModels[`${phase}:${group.model}`] ?? group.state === "running";
+        },
+
+        toggleModel(phase, group) {
+            this.run.openModels[`${phase}:${group.model}`] = !this.isModelOpen(phase, group);
         },
 
         // First screen: the state of the form as status rows.

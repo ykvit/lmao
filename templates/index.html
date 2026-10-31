@@ -87,6 +87,18 @@
 
             <button type="button" @click="addCase()"
                     class="w-full text-left border border-fg-muted text-fg px-22 py-13 hover:border-fg">+ add test case</button>
+
+            <div class="flex items-center gap-15 text-fg-muted">
+                <button type="button" @click="$refs.casesFile.click()"
+                        title="add test cases from a .json file"
+                        class="hover:text-fg">import</button>
+                <button type="button" @click="exportCases()" :disabled="!canExport"
+                        title="save the test cases as a .json file"
+                        class="enabled:hover:text-fg disabled:cursor-not-allowed">export</button>
+                <input type="file" accept=".json,application/json" x-ref="casesFile"
+                       @change="importCases($event)" class="hidden" tabindex="-1">
+            </div>
+            {{ ui.warn_notice("casesError", "casesError") }}
         </div>
     </div>
 

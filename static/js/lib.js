@@ -827,16 +827,142 @@ function buildReport(data) {
     };
 }
 
+// --- test cases file ------------------------------------------------------
+
+// The file holds the setup form the way /api/evaluate takes it:
+// {"version": 1, "base_rationale": "...",
+//  "test_cases": [{tag, question, specific_rationale, reference}]}
+const CASES_FILE_VERSION = 1;
+const CASES_MAX_BYTES = 256 * 1024;
+const CASES_MAX_COUNT = 200;
+const CASES_TOO_LARGE = "the file is too large (max 256 KB).";
+const CASE_OPTIONAL_FIELDS = ["tag", "specific_rationale", "reference"];
+
+// A file the UI cannot import: the message is shown to the user as is.
+class CasesFileError extends Error {}
+
+// Form case { tag, question, rationale, reference } -> the case of the payload
+// and of the file. Empty optional fields are left out: the backend would keep
+// an empty tag as the tag instead of using its default.
+function payloadCase(c) {
+    const text = (value) => String(value ?? "").trim();
+    const optional = (key, value) => (text(value) ? { [key]: text(value) } : {});
+    return {
+        ...optional("tag", c.tag),
+        question: text(c.question),
+        ...optional("specific_rationale", c.rationale),
+        ...optional("reference", c.reference),
+    };
+}
+
+// File case -> form fields. lmao.js adds `id` and `open` (caseCounter lives there).
+function caseFields(raw) {
+    return {
+        tag: raw.tag,
+        question: raw.question,
+        rationale: raw.specific_rationale,
+        reference: raw.reference,
+    };
+}
+
+// A case with nothing typed in it (the initial empty case).
+function isBlankCase(c) {
+    return !["tag", "question", "rationale", "reference"].some((key) =>
+        String(c[key] ?? "").trim(),
+    );
+}
+
+// Cases without a question are skipped: the importer would reject them.
+function buildCasesFile({ baseRationale, cases }) {
+    const file = {
+        version: CASES_FILE_VERSION,
+        base_rationale: String(baseRationale ?? "").trim(),
+        test_cases: cases.filter((c) => !isBlankQuestion(c)).map(payloadCase),
+    };
+    return `${JSON.stringify(file, null, 2)}\n`;
+}
+
+function isBlankQuestion(c) {
+    return !String(c.question ?? "").trim();
+}
+
+// Text of a file -> { baseRationale, cases }. The cases are raw: they keep the
+// file's field names (specific_rationale), see caseFields(). Unknown fields are
+// ignored, null counts as a missing optional field. Throws CasesFileError.
+function parseCasesFile(text) {
+    const source = String(text ?? "").replace(/^\uFEFF/, "");
+    if (new TextEncoder().encode(source).length > CASES_MAX_BYTES) {
+        throw new CasesFileError(CASES_TOO_LARGE);
+    }
+
+    let data;
+    try {
+        data = JSON.parse(source);
+    } catch {
+        throw new CasesFileError("the file is not valid JSON.");
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new CasesFileError("the file must contain a JSON object.");
+    }
+    if (data.version !== CASES_FILE_VERSION) {
+        throw new CasesFileError(`unsupported file version: expected ${CASES_FILE_VERSION}.`);
+    }
+
+    const baseRationale = data.base_rationale ?? "";
+    if (typeof baseRationale !== "string") {
+        throw new CasesFileError('"base_rationale" must be a string.');
+    }
+
+    const list = data.test_cases;
+    if (!Array.isArray(list) || list.length === 0) {
+        throw new CasesFileError("the file has no test cases.");
+    }
+    if (list.length > CASES_MAX_COUNT) {
+        throw new CasesFileError(`too many test cases (max ${CASES_MAX_COUNT}).`);
+    }
+
+    const cases = list.map((item, index) => {
+        const label = `case ${pad2(index)}`;
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+            throw new CasesFileError(`${label}: must be an object.`);
+        }
+        if (typeof item.question !== "string") {
+            throw new CasesFileError(`${label}: "question" must be a string.`);
+        }
+        if (!item.question.trim()) {
+            throw new CasesFileError(`${label}: the question is empty.`);
+        }
+        const out = { question: item.question };
+        for (const key of CASE_OPTIONAL_FIELDS) {
+            const value = item[key] ?? "";
+            if (typeof value !== "string") {
+                throw new CasesFileError(`${label}: "${key}" must be a string.`);
+            }
+            out[key] = value;
+        }
+        return out;
+    });
+
+    return { baseRationale, cases };
+}
+
 // Lets `node --test` load this file. In the browser `module` does not exist
 // and the functions above stay plain globals.
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
+        CASES_FILE_VERSION,
+        CASES_MAX_BYTES,
+        CASES_MAX_COUNT,
+        CASES_TOO_LARGE,
+        CasesFileError,
         ReportFormatError,
         answerBlocks,
+        buildCasesFile,
         buildChart,
         buildDistribution,
         buildReport,
         buildSteps,
+        caseFields,
         clampScore,
         competitionRanks,
         domId,
@@ -844,6 +970,7 @@ if (typeof module !== "undefined" && module.exports) {
         fmtNum,
         fmtSeconds,
         fmtSpan,
+        isBlankCase,
         isFailed,
         loadGroup,
         matrixCell,
@@ -851,8 +978,10 @@ if (typeof module !== "undefined" && module.exports) {
         median,
         niceStep,
         pad2,
+        parseCasesFile,
         parseInline,
         parseMarkdown,
+        payloadCase,
         questionLabel,
         rankOf,
         round1,

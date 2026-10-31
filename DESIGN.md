@@ -144,6 +144,17 @@ Select (inline in `index.html`): same box, native `<select class="appearance-non
 Expanded: `border border-line p-15 flex flex-col gap-12` with header row (`case 01` / `collapse` / `remove`). Collapsed: `border border-line px-15 py-12 flex items-center gap-15` (`case 02`, tag, `edit`).
 Field order: tag, question, reference answer, specific criteria (display only: the payload keys are named).
 
+### Test cases file (import / export)
+Two text buttons under `+ add test case`: `import` and `export` (`text-fg-muted`, `hover:text-fg`, same style as `collapse` / `remove`). `export` is disabled while no case has a question. `import` opens a hidden `<input type="file" accept=".json">`. Errors use the warn notice (`casesError`); success is announced through the live region.
+
+File format, the same field names as the `/api/evaluate` payload:
+```json
+{"version": 1, "base_rationale": "...", "test_cases": [{"tag": "", "question": "", "specific_rationale": "", "reference": ""}]}
+```
+- Export writes `payloadCase()` for every case with a question: trimmed, empty optional fields left out. The form calls the criteria field `rationale`; `caseFields()` / `payloadCase()` map it.
+- Import checks `file.size` (256 KB) before reading, then `parseCasesFile()`: version 1, types, at most 200 cases, `case 03: the question is empty`. Unknown fields are ignored, `null` counts as missing. Content is shown only through `x-text`.
+- Import into an empty form replaces it. Otherwise the cases are added after the existing ones. Empty cases are dropped either way. Imported cases are collapsed. The general criteria of the file are used only while the field is empty.
+
 ### Warn notice
 `ui.warn_notice(show, text, action, action_label)`: `border border-warn px-15 py-12 text-warn`, `role="alert"`, optional action button (`reload`, `back to setup`). Errors only.
 
@@ -334,7 +345,7 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 
 ## Decisions made while porting
 
-- **Files.** `templates/_theme.html`, `base.html`, `index.html`, `_components.html`; `static/js/lmao.js` (Alpine state, SSE, requests) and `static/js/lib.js` (pure helpers: `shortName`, `shortNames`, `buildSteps`, `parseMarkdown`, `buildReport`, `buildChart`, `competitionRanks`, `sortHistory`, `domId`; no DOM, tested with `node --test` in `tests/js/`).
+- **Files.** `templates/_theme.html`, `base.html`, `index.html`, `_components.html`; `static/js/lmao.js` (Alpine state, SSE, requests) and `static/js/lib.js` (pure helpers: `shortName`, `shortNames`, `buildSteps`, `parseMarkdown`, `buildReport`, `buildChart`, `competitionRanks`, `sortHistory`, `domId`, `payloadCase`, `buildCasesFile`, `parseCasesFile`; no DOM, tested with `node --test` in `tests/js/`).
 - **Components.** One Jinja macro per Figma component in `_components.html`: `activity_dot`, `section_label`, `md_inline`, `md`, `answer_box`, `warn_notice`, `field`, `checkbox_row`, `status_row`, `card_head`, `eval_block`, `nav_toggle`, `tabs`.
 - **Short names.** `shortNames()` builds one map per model set. Colliding short names get the quantisation (`foo · Q4_K_M`), otherwise the full name. The full name stays in `title` attributes and in the archive meta.
 - **Matrix.** Per-question scores, mean, median, pass rate, c/s, t/s and time. fails / critical / errors / judge errors live in the model card header (median is shown in both). Scores have no colour scale.
@@ -343,7 +354,7 @@ Durations are computed from event `timestamp` fields (ISO) without backend chang
 - **Running screen.** Rows are built up front as `queued` from the request payload and keyed `phase:model:question`. Grading rows go model by model, question by question, in both modes (`_run_local` and `_run_cloud` grade in the same order). The order is display only: events find their row by key. A failed answer marks its grading row `skipped` (the backend sends no event for it). Rows in flight when the stream breaks become `error` / `interrupted`. The stream is closed on the first `onerror` (no auto-reconnect: the backend replays from the start).
 - **Load notice.** Only on the first call of a model load group (first reference, first grading, first answer of each candidate), after ~8 s. No VRAM claims.
 - **Per question view.** Ranks use competition ranking (1, 1, 3); failed answers are `not ranked` and listed last. The denominator is the number of models in the question. Truncated answers are ranked by their score and keep the `*`.
-- **Additions without a Figma frame.** `collapse` in an expanded test case, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, per-model groups in the answer and grading phases, comparison chart and matrix bars, matrix median column and navigation, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
+- **Additions without a Figma frame.** `collapse` in an expanded test case, import / export of test cases, cloud judge row, reference field, specific criteria field, `reload` in empty/error states, `back to setup` in the error notice, section numbering `01`–`04` in results, reference answers block, first screen checklist, topbar status and wordmark navigation, phase progress segments and folding, per-model groups in the answer and grading phases, comparison chart and matrix bars, matrix median column and navigation, summary figures, answers by category, score scale, Markdown answers with `raw` / `copy`, hotkeys, favicon.
 - **Interaction states.** Global `:focus-visible` outline (1px `fg`, offset 2px); hover: archive item `bg-bg`, nav toggles, wordmark subtitle, inactive tabs and matrix q headers `text-fg`; matrix model names `text-fg-muted`; primary `bg-fg-muted`, secondary `border-fg`, warn buttons `bg-line`.
 - **Not in this PR.** `cancel run` (needs an endpoint: flag in `TASKS`, check between steps in both `_run_local` and `_run_cloud`, `unload` in `finally`), light theme, responsive overlays, SSE reconnect, vendoring Tailwind / Alpine / fonts (see the CDN note below).
 

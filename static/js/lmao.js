@@ -9,13 +9,15 @@ document.addEventListener("alpine:init", () => {
 
     const SLOW_LOAD_MS = 8000;
 
-    const newCase = () => ({
+    // `fields`: values of an imported case (see caseFields in lib.js).
+    const newCase = (fields = {}) => ({
         id: ++caseCounter,
         tag: "",
         question: "",
         rationale: "",
         reference: "",
         open: true,
+        ...fields,
     });
 
     const freshRun = () => ({
@@ -60,6 +62,7 @@ document.addEventListener("alpine:init", () => {
         baseRationale: "",
         cases: [newCase()],
         formError: "",
+        casesError: "", // import / export of test cases
         submitting: false,
 
         history: [],
@@ -356,6 +359,58 @@ document.addEventListener("alpine:init", () => {
             }
         },
 
+        get canExport() {
+            return this.cases.some((c) => c.question.trim());
+        },
+
+        exportCases() {
+            this.casesError = "";
+            const text = buildCasesFile({
+                baseRationale: this.baseRationale,
+                cases: this.cases,
+            });
+            const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "lmao-test-cases.json";
+            document.body.append(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+
+        // Empty form: the file replaces it. Otherwise the cases are added after
+        // the existing ones; empty cases are dropped either way. The general
+        // criteria of the file are used only while the field is empty.
+        async importCases(event) {
+            const input = event.target;
+            const file = input.files?.[0];
+            if (!file) return;
+            this.casesError = "";
+            try {
+                // Checked before the file is read.
+                if (file.size > CASES_MAX_BYTES) throw new CasesFileError(CASES_TOO_LARGE);
+                const parsed = parseCasesFile(await file.text());
+
+                const kept = this.cases.filter((c) => !isBlankCase(c));
+                if (kept.length + parsed.cases.length > CASES_MAX_COUNT) {
+                    throw new CasesFileError(`too many test cases (max ${CASES_MAX_COUNT}).`);
+                }
+                if (!this.baseRationale.trim()) this.baseRationale = parsed.baseRationale;
+                this.cases = [
+                    ...kept,
+                    ...parsed.cases.map((raw) => newCase({ ...caseFields(raw), open: false })),
+                ];
+                this.announce(`imported ${parsed.cases.length} test cases`);
+            } catch (e) {
+                const known = e instanceof CasesFileError;
+                if (!known) console.error("Failed to import test cases:", e);
+                this.casesError = known ? e.message : "could not read the file.";
+            } finally {
+                input.value = ""; // the same file can be chosen again
+            }
+        },
+
         // --- start ----------------------------------------------------------
 
         validate() {
@@ -373,24 +428,13 @@ document.addEventListener("alpine:init", () => {
             return "";
         },
 
-        // Empty optional fields are left out: the backend would keep an empty
-        // tag as the tag instead of using its default.
         buildPayload() {
-            const optional = (key, value) => {
-                const text = value.trim();
-                return text ? { [key]: text } : {};
-            };
             return {
                 judge: this.judge,
                 judge_cloud: this.judgeCloud,
                 candidates: [...this.selected],
                 base_rationale: this.baseRationale.trim(),
-                test_cases: this.cases.map((c) => ({
-                    question: c.question.trim(),
-                    ...optional("tag", c.tag),
-                    ...optional("specific_rationale", c.rationale),
-                    ...optional("reference", c.reference),
-                })),
+                test_cases: this.cases.map((c) => payloadCase(c)),
             };
         },
 

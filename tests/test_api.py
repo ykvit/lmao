@@ -467,3 +467,117 @@ def test_results_hide_legacy_runs(client):
     response = client.get(f"/api/results/{task_id}")
 
     assert response.status_code == 404
+
+
+# --- /api/results/<id>/export -----------------------------------------------
+
+
+def _save_run(task_id="run_x_20260101_000000"):
+    run = _run()
+    # The pipeline always writes these two next to the fields _run() has.
+    run["task_id"] = task_id
+    run["mode"] = "local"
+    run["questions_results"][0]["tag"] = "=SUM(1+1)"
+    run["questions_results"][0]["results"] = [
+        {
+            "model_name": "m1",
+            "answer": "4",
+            "status": "ok",
+            "category": "perfect",
+            "score": 95,
+            "tps": 10.0,
+            "cps": 50.0,
+            "time_sec": 1.0,
+        }
+    ]
+    run_dir = Path("history") / task_id
+    _write_json(run_dir / "evaluation_results.json", run)
+    _write_json(
+        run_dir / "technical_metrics.json",
+        {"task_id": task_id, "metrics": {"m1": {"tokens_per_second": 10.0}}},
+    )
+    return task_id
+
+
+@pytest.mark.parametrize(
+    "fmt, mimetype",
+    [
+        ("json", "application/json"),
+        ("csv", "text/csv"),
+        ("md", "text/markdown"),
+    ],
+)
+def test_export_sends_an_attachment(client, fmt, mimetype):
+    task_id = _save_run()
+
+    response = client.get(f"/api/results/{task_id}/export?format={fmt}")
+
+    assert response.status_code == 200
+    assert response.mimetype == mimetype
+    assert response.headers["Content-Disposition"] == (
+        f'attachment; filename="{task_id}.{fmt}"'
+    )
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_export_json_matches_the_results_endpoint(client):
+    task_id = _save_run()
+
+    exported = client.get(f"/api/results/{task_id}/export?format=json")
+    results = client.get(f"/api/results/{task_id}")
+
+    assert exported.get_json() == results.get_json()
+
+
+def test_export_csv_has_one_row_per_answer_and_defuses_formulas(client):
+    task_id = _save_run()
+
+    body = client.get(f"/api/results/{task_id}/export?format=csv").get_data(
+        as_text=True
+    )
+
+    lines = body.splitlines()
+    assert lines[0] == "question,tag,model,score,category,status,tps,cps,time_sec"
+    assert lines[1] == "q1,'=SUM(1+1),m1,95,perfect,ok,10.0,50.0,1.0"
+    assert len(lines) == 2
+
+
+def test_export_markdown_contains_the_report(client):
+    task_id = _save_run()
+
+    body = client.get(f"/api/results/{task_id}/export?format=md").get_data(as_text=True)
+
+    assert body.startswith(f"# {task_id}\n")
+    assert "#### m1" in body
+
+
+@pytest.mark.parametrize("query", ["", "?format=", "?format=xml", "?format=CSV"])
+def test_export_rejects_a_missing_or_unknown_format(client, query):
+    task_id = _save_run()
+
+    response = client.get(f"/api/results/{task_id}/export{query}")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Unknown format. Use json, csv or md."}
+
+
+def test_export_rejects_unsafe_task_id(client):
+    response = client.get("/api/results/.hidden/export?format=csv")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Invalid task_id"}
+
+
+def test_export_returns_404_for_missing_and_legacy_runs(client):
+    task_id = "run_old_20260101_000000"
+    _write_json(
+        Path("history") / task_id / "evaluation_results.json",
+        {"questions_results": []},
+    )
+
+    missing = client.get("/api/results/run_x_20260101_000000/export?format=csv")
+    legacy = client.get(f"/api/results/{task_id}/export?format=csv")
+
+    assert missing.status_code == 404
+    assert legacy.status_code == 404
+    assert legacy.get_json() == {"error": "Results not found or not ready"}

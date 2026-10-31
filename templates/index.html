@@ -331,7 +331,7 @@
                         <div class="text-fg-muted">* truncated · err generation error · ? judge error · muted: no reference, excluded from the scores</div>
                     </div>
 
-                    {# chart: median score (y) against median t/s (x) #}
+                    {# chart: mean score (y) against median chars/s (x) #}
                     <div x-show="comparisonView === 'chart'" class="flex flex-col gap-15">
                         <template x-if="report.chart.points.length">
                             <div class="flex flex-col gap-15">
@@ -398,6 +398,7 @@
                                     <span class="flex items-center gap-8"><span class="size-8 bg-fg"></span>recommended</span>
                                     <span class="flex items-center gap-8"><span class="size-8 border border-fg"></span>model (mean score, median c/s)</span>
                                     <span class="flex items-center gap-8"><span class="size-8 bg-surface border border-line"></span>faster and better than the median</span>
+                                    <span x-show="report.chart.pareto" x-cloak class="flex items-center gap-8"><span class="w-15 border-t border-dashed border-fg-muted"></span>pareto line</span>
                                 </div>
                             </div>
                         </template>

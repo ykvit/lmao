@@ -305,10 +305,11 @@ class EvaluationPipeline:
         for model in candidates:
             self._answer_all(run, model, questions, metrics[model])
 
-        # Grading and the summary share one load of the judge.
+        # Grading and the summary share one load of the judge. Grading goes
+        # model by model, the same order as in cloud mode.
         with self._loaded(judge):
-            for question in questions:
-                for entry in question["results"]:
+            for model in candidates:
+                for question, entry in self._entries_of(model, questions):
                     self._grade_entry(run, judge, question, base_rationale, entry)
             return self._summarize(run, judge, questions, candidates)
 
@@ -346,6 +347,14 @@ class EvaluationPipeline:
                 future.result()
 
         return self._summarize(run, judge, questions, candidates)
+
+    @staticmethod
+    def _entries_of(model: str, questions: list):
+        """Yields (question, entry) for the answers of one model, in question order."""
+        for question in questions:
+            for entry in question["results"]:
+                if entry["model_name"] == model:
+                    yield question, entry
 
     # --- A: references ------------------------------------------------------
 

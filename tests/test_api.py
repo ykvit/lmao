@@ -474,6 +474,9 @@ def test_results_hide_legacy_runs(client):
 
 def _save_run(task_id="run_x_20260101_000000"):
     run = _run()
+    # The pipeline always writes these two next to the fields _run() has.
+    run["task_id"] = task_id
+    run["mode"] = "local"
     run["questions_results"][0]["tag"] = "=SUM(1+1)"
     run["questions_results"][0]["results"] = [
         {

@@ -427,7 +427,7 @@ const CHART_MODELS = [
     { model: "c", mean: null, median_cps: 10 },
 ];
 
-test("buildChart plots models with a mean and t/s and lists the rest", () => {
+test("buildChart plots models with a mean and c/s and lists the rest", () => {
     const chart = lib.buildChart(CHART_MODELS, (m) => m, "a");
 
     assert.deepEqual(

@@ -812,7 +812,8 @@ function buildReport(data) {
             id: q.id,
             title: q.tag || "",
             anchor: domId("question", q.id),
-        })),        models,
+        })),
+        models,
         questionCards: questions.map((q) => buildQuestionCard(q, summaryModels, display)),
         references: questions.map((q) => {
             const ref = q.reference || {};

@@ -23,12 +23,20 @@ from core.scoring import (
 )
 
 
-def _entry(status=STATUS_OK, score=80, no_reference=False, tps=50.0, time_sec=2.0):
+def _entry(
+    status=STATUS_OK,
+    score=80,
+    no_reference=False,
+    tps=50.0,
+    cps=250.0,
+    time_sec=2.0,
+):
     return {
         "status": status,
         "score": score,
         "no_reference": no_reference,
         "tps": tps,
+        "cps": cps,
         "time_sec": time_sec,
     }
 
@@ -163,15 +171,22 @@ def test_truncated_answer_can_never_pass():
 
 def test_speed_medians_are_rounded():
     entries = [
-        _entry(tps=10.0, time_sec=1.0),
-        _entry(tps=30.0, time_sec=3.0),
-        _entry(tps=20.123, time_sec=2.456),
+        _entry(tps=10.0, cps=100.0, time_sec=1.0),
+        _entry(tps=30.0, cps=300.0, time_sec=3.0),
+        _entry(tps=20.123, cps=200.123, time_sec=2.456),
     ]
 
     result = summarize_model("m", entries)
 
     assert result["median_tps"] == 20.12
+    assert result["median_cps"] == 200.12
     assert result["median_time_sec"] == 2.46
+
+
+def test_missing_cps_is_skipped_in_the_median():
+    entries = [_entry(cps=None), _entry(cps=100.0)]
+
+    assert summarize_model("m", entries)["median_cps"] == 100.0
 
 
 def test_summarize_without_entries_has_no_numbers():
@@ -182,6 +197,7 @@ def test_summarize_without_entries_has_no_numbers():
     assert result["median"] is None
     assert result["pass_rate"] is None
     assert result["median_tps"] is None
+    assert result["median_cps"] is None
     assert result["median_time_sec"] is None
 
 

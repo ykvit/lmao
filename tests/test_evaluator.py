@@ -286,6 +286,7 @@ def test_full_run_emits_events_and_saves_results():
         "done_reason": "stop",
         "error": None,
         "tps": 200.0,
+        "cps": 12.0,
         "time_sec": 0.8,
     }
     assert question["results"][1]["category"] == "instruction_violation"
@@ -334,6 +335,16 @@ def test_candidates_get_a_length_limited_prompt_without_thinking():
         assert call["think"] is False
         assert call["options"] == {"num_predict": 1000}
 
+def test_chars_per_second_counts_the_cleaned_answer():
+    ollama = FakeOllama(
+        answers={"cand-a": ok("<think>hmm</think>\nfinal answer", eval_time=0.5)}
+    )
+    pipeline = EvaluationPipeline(ollama)
+
+    run(pipeline)
+
+    assert results_by_model(pipeline)["cand-a"]["cps"] == 24.0
+    assert summary_by_model(pipeline)["cand-a"]["median_cps"] == 24.0
 
 # --- model loading ----------------------------------------------------------
 

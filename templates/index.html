@@ -174,18 +174,26 @@
             </div>
 
             <div :id="'rows-' + g.phase" x-show="!isCollapsed(g.phase)">
-                <template x-for="s in run.steps.filter(r => r.phase === g.phase)" :key="s.key">
+                <template x-for="mg in modelGroups(g.phase)" :key="mg.model">
                     <div>
-                        {{ ui.status_row("s.state", "s.label", "rowMeta(s)", title_expr="s.model") }}
-                        {# load notice: announced once through the page live region #}
-                        <div x-show="showLoadNotice(s)" x-cloak class="pl-87 py-10 border-b border-line">
-                            <div class="bg-surface border border-line p-15 flex flex-col gap-8">
-                                <div class="flex items-center gap-8">
-                                    {{ ui.activity_dot() }}
-                                    the model may still be loading — this is normal
+                        {# model header: answer and grading only #}
+                        <div x-show="isGrouped(g.phase)" x-cloak>{{ ui.model_group_head() }}</div>
+                        <div x-show="isModelOpen(g.phase, mg)">
+                            <template x-for="s in mg.rows" :key="s.key">
+                                <div>
+                                    {{ ui.status_row("s.state", "s.label", "rowMeta(s)", title_expr="s.model") }}
+                                    {# load notice: announced once through the page live region #}
+                                    <div x-show="showLoadNotice(s)" x-cloak class="pl-87 py-10 border-b border-line">
+                                        <div class="bg-surface border border-line p-15 flex flex-col gap-8">
+                                            <div class="flex items-center gap-8">
+                                                {{ ui.activity_dot() }}
+                                                the model may still be loading — this is normal
+                                            </div>
+                                            <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <p class="text-fg-muted">each model is loaded once at the start of its phase and stays loaded for 10 minutes. a large model can take 10–60 s to load, so the first answer is slow. nothing is frozen.</p>
-                            </div>
+                            </template>
                         </div>
                     </div>
                 </template>

@@ -143,7 +143,17 @@ def test_csv_has_one_row_per_answer():
     rows = _rows(to_csv(_results()))[1:]
 
     assert len(rows) == 4
-    assert rows[0] == ["q1", "logic", "a", "95", "perfect", "ok", "50.0", "250.0", "1.5"]
+    assert rows[0] == [
+        "q1",
+        "logic",
+        "a",
+        "95",
+        "perfect",
+        "ok",
+        "50.0",
+        "250.0",
+        "1.5",
+    ]
     assert rows[1] == ["q1", "logic", "b", "", "", "generation_error", "", "", ""]
 
 
@@ -241,7 +251,10 @@ def test_markdown_table_uses_the_summary_numbers_and_dashes_for_missing():
         "| model | graded | mean | median | pass | fails | critical | errors "
         "| judge errors | c/s | t/s | time, s |"
     ) in markdown
-    assert "| a | 1 | 83.5 | 83.5 | 100% | 0 | 0 | 0 | 0 | 250.0 | 50.0 | 1.5 |" in markdown
+    assert (
+        "| a | 1 | 83.5 | 83.5 | 100% | 0 | 0 | 0 | 0 | 250.0 | 50.0 | 1.5 |"
+        in markdown
+    )
     assert "| b | 1 | 15.0 | 15.0 | 0% | 0 | 1 | 1 | 0 | – | – | – |" in markdown
 
 

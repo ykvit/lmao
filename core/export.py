@@ -192,9 +192,7 @@ def _question_block(question: dict) -> str:
     reference = question.get("reference") or {}
     if reference.get("text"):
         source = _line(reference.get("source"))
-        reference_block = (
-            f"Reference answer ({source}):\n\n{_fence(reference['text'])}"
-        )
+        reference_block = f"Reference answer ({source}):\n\n{_fence(reference['text'])}"
     else:
         reference_block = "No reference answer."
 

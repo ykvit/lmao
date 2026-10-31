@@ -345,9 +345,9 @@ test("sortHistory is newest first and does not mutate its input", () => {
 // --- chart and figures ----------------------------------------------------
 
 const CHART_MODELS = [
-    { model: "a", mean: 90, median_tps: 50 },
-    { model: "b", mean: 60, median_tps: 100 },
-    { model: "c", mean: null, median_tps: 10 },
+    { model: "a", mean: 90, median_cps: 50 },
+    { model: "b", mean: 60, median_cps: 100 },
+    { model: "c", mean: null, median_cps: 10 },
 ];
 
 test("buildChart plots models with a mean and t/s and lists the rest", () => {
@@ -369,9 +369,9 @@ test("buildChart plots models with a mean and t/s and lists the rest", () => {
         chart.yTicks.map((t) => t.text),
         ["0", "25", "50", "75", "100"],
     );
-    assert.equal(chart.mid.tpsText, "median 75 t/s");
+    assert.equal(chart.mid.cpsText, "median 75 c/s");
     assert.equal(chart.mid.scoreText, "median 75");
-    assert.equal(chart.points[0].title, "a: mean score 90 · 50 t/s");
+    assert.equal(chart.points[0].title, "a: mean score 90 · 50 c/s");
 });
 
 test("buildChart draws the Pareto line through models nobody beats on both axes", () => {
@@ -383,7 +383,7 @@ test("buildChart draws the Pareto line through models nobody beats on both axes"
 });
 
 test("buildChart without plottable models", () => {
-    const chart = lib.buildChart([{ model: "c", mean: null, median_tps: 10 }], (m) => m, null);
+    const chart = lib.buildChart([{ model: "c", mean: null, median_cps: 10 }], (m) => m, null);
 
     assert.deepEqual(chart.points, []);
     assert.deepEqual(chart.missing, ["c"]);
@@ -392,8 +392,8 @@ test("buildChart without plottable models", () => {
 });
 
 const FIGURE_MODELS = [
-    { model: "a", mean: 90, pass_rate: 1, median_tps: 50, median_time_sec: 3 },
-    { model: "b", mean: 60, pass_rate: 0.5, median_tps: 100, median_time_sec: 2 },
+    { model: "a", mean: 90, pass_rate: 1, median_cps: 50, median_time_sec: 3 },
+    { model: "b", mean: 60, pass_rate: 0.5, median_cps: 100, median_time_sec: 2 },
 ];
 
 test("rankOf ranks a model among all that have a value", () => {
@@ -411,7 +411,7 @@ test("verdictFigures gives four figures with their place in the run", () => {
         [
             ["mean score", "90", "/ 100", "best of 2"],
             ["pass rate", "100", "%", "best of 2"],
-            ["speed", "50", "t/s", "#2 of 2 · best 100"],
+            ["speed", "50", "c/s", "#2 of 2 · best 100"],
             ["median time", "3", "s", "#2 of 2 · best 2 s"],
         ],
     );
@@ -476,6 +476,7 @@ function runFixture() {
                     errors: 0,
                     judge_errors: 0,
                     median_tps: 50,
+                    median_cps: 250,
                     median_time_sec: 1,
                 },
                 {
@@ -489,6 +490,7 @@ function runFixture() {
                     errors: 1,
                     judge_errors: 0,
                     median_tps: null,
+                    median_cps: null,
                     median_time_sec: null,
                 },
             ],
@@ -524,8 +526,10 @@ test("buildReport: model rows", () => {
     assert.equal(a.passRate, "100%");
     assert.equal(
         a.metricsLine,
-        "mean 95 · median 95 · pass 100% · fails 0 · critical 0 · errors 0 · judge errors 0 · 50 t/s · 2.5 s total",
+        "mean 95 · median 95 · pass 100% · fails 0 · critical 0 · errors 0 · judge errors 0 · 250 c/s · 50 t/s · 2.5 s total",
     );
+    assert.equal(a.cps, "250");
+    assert.equal(b.cps, "–");
     assert.equal(b.tps, "–");
     assert.equal(b.median, "0");
     assert.equal(b.cells[0].text, "err");
@@ -556,7 +560,7 @@ test("buildReport: table grid, heads, references and chart", () => {
 
     assert.equal(
         report.grid,
-        "grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(1,48px) 64px 64px",
+        "grid-template-columns:minmax(160px,1fr) 64px 64px 64px repeat(1,48px) 64px 64px 64px",
     );
     assert.deepEqual(report.questionHeads, [
         { id: "q1", title: "logic", anchor: lib.domId("question", "q1") },

@@ -273,6 +273,7 @@
                                                 :aria-label="h.id + (h.title ? ' · ' + h.title : '') + ': show in per question view'"
                                                 class="text-left hover:text-fg" x-text="h.id" :title="h.title"></button>
                                     </template>
+                                    <div>c/s</div>
                                     <div>t/s</div>
                                     <div>time, s</div>
                                 </div>
@@ -300,6 +301,7 @@
                                                 </span>
                                             </button>
                                         </template>
+                                        <div class="text-fg-muted" x-text="m.cps"></div>
                                         <div class="text-fg-muted" x-text="m.tps"></div>
                                         <div class="text-fg-muted" x-text="m.time"></div>
                                     </div>
@@ -332,7 +334,7 @@
                                               :style="report.chart.mid.flipX
                                                   ? 'right:' + (100 - report.chart.mid.left) + '%'
                                                   : 'left:' + report.chart.mid.left + '%'"
-                                              x-text="report.chart.mid.tpsText"></span>
+                                              x-text="report.chart.mid.cpsText"></span>
                                         {# score median: right end of its line, above it (below near the top) #}
                                         <span class="absolute right-8 whitespace-nowrap text-fg-muted"
                                               :class="report.chart.mid.flipY ? 'pt-4' : '-translate-y-full pb-4'"
@@ -349,7 +351,7 @@
                                             <span class="absolute top-full pt-8 -translate-x-1/2 text-fg-muted"
                                                   :style="'left:' + t.pos + '%'" x-text="t.text"></span>
                                         </template>
-                                        <span class="absolute top-full right-0 pt-33 text-fg-muted">t/s</span>
+                                        <span class="absolute top-full right-0 pt-33 text-fg-muted">chars/s</span>
 
                                         {# pareto line: the only SVG, scaled with the box #}
                                         <svg x-show="report.chart.pareto" aria-hidden="true"
@@ -374,14 +376,14 @@
 
                                 <div class="flex flex-wrap gap-x-22 gap-y-8 text-fg-muted">
                                     <span class="flex items-center gap-8"><span class="size-8 bg-fg"></span>recommended</span>
-                                    <span class="flex items-center gap-8"><span class="size-8 border border-fg"></span>model (mean score, median t/s)</span>
+                                    <span class="flex items-center gap-8"><span class="size-8 border border-fg"></span>model (mean score, median c/s)</span>
                                     <span class="flex items-center gap-8"><span class="size-8 bg-surface border border-line"></span>faster and better than the median</span>
                                 </div>
                             </div>
                         </template>
-                        <div x-show="!report.chart.points.length" class="text-fg-muted">no model has both a mean score and t/s.</div>
+                        <div x-show="!report.chart.points.length" class="text-fg-muted">no model has both a mean score and c/s.</div>
                         <div x-show="report.chart.missing.length" class="text-fg-muted"
-                             x-text="'not plotted (no mean score or t/s): ' + report.chart.missing.join(', ')"></div>
+                             x-text="'not plotted (no mean score or c/s): ' + report.chart.missing.join(', ')"></div>
                     </div>
                 </div>
             </section>
